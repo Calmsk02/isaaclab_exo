@@ -1,0 +1,335 @@
+<?xml version="1.0" ?>
+<robot name="isaac_humanbody" xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+<xacro:include filename="$(find isaac_humanbody_description)/urdf/materials.xacro" />
+<xacro:include filename="$(find isaac_humanbody_description)/urdf/isaac_humanbody.trans" />
+<link name="base_link">
+  <inertial>
+    <origin xyz="2.0363485666126e-05 -0.0190330900605631 0.00640699691177261" rpy="0 0 0"/>
+    <mass value="9.00565274723227"/>
+    <inertia ixx="0.0582316590177229" iyy="0.068805546111736" izz="0.0698497925002922" ixy="-1.52038424393042e-05" iyz="0.00176803209944459" ixz="-3.42533242140571e-05"/>
+  </inertial>
+  <visual>
+    <origin xyz="0 0 0" rpy="0 0 0"/>
+    <geometry>
+      <mesh filename="package://isaac_humanbody_description/meshes/base_link.stl" scale="0.001 0.001 0.001"/>
+    </geometry>
+    <material name="water_clear"/>
+  </visual>
+  <collision>
+    <origin xyz="0 0 0" rpy="0 0 0"/>
+    <geometry>
+      <mesh filename="package://isaac_humanbody_description/meshes/base_link.stl" scale="0.001 0.001 0.001"/>
+    </geometry>
+  </collision>
+</link>
+
+<link name="upperbody_1">
+  <inertial>
+    <origin xyz="1.4717165317093472e-05 -0.0005689364518795439 0.27952627075076253" rpy="0 0 0"/>
+    <mass value="31.0777422554024"/>
+    <inertia ixx="0.94390142017293" iyy="1.0751211313399" izz="0.339070103325671" ixy="-1.04049231450683e-05" iyz="-0.022209420490825" ixz="0.000358373515669932"/>
+  </inertial>
+  <visual>
+    <origin xyz="-0.0 -0.0 -0.1" rpy="0 0 0"/>
+    <geometry>
+      <mesh filename="package://isaac_humanbody_description/meshes/upperbody_1.stl" scale="0.001 0.001 0.001"/>
+    </geometry>
+    <material name="water_clear"/>
+  </visual>
+  <collision>
+    <origin xyz="-0.0 -0.0 -0.1" rpy="0 0 0"/>
+    <geometry>
+      <mesh filename="package://isaac_humanbody_description/meshes/upperbody_1.stl" scale="0.001 0.001 0.001"/>
+    </geometry>
+  </collision>
+</link>
+
+<link name="right_upperarm_1">
+  <inertial>
+    <origin xyz="-0.004802049969907463 0.003990341674869703 -0.12052619253497587" rpy="0 0 0"/>
+    <mass value="2.76024299229723"/>
+    <inertia ixx="0.0189984157377428" iyy="0.0171474185642832" izz="0.00512839447241874" ixy="5.17416038028524e-05" iyz="0.00107565677885079" ixz="0.000664867861993879"/>
+  </inertial>
+  <visual>
+    <origin xyz="0.2 -0.04 -0.43" rpy="0 0 0"/>
+    <geometry>
+      <mesh filename="package://isaac_humanbody_description/meshes/right_upperarm_1.stl" scale="0.001 0.001 0.001"/>
+    </geometry>
+    <material name="water_clear"/>
+  </visual>
+  <collision>
+    <origin xyz="0.2 -0.04 -0.43" rpy="0 0 0"/>
+    <geometry>
+      <mesh filename="package://isaac_humanbody_description/meshes/right_upperarm_1.stl" scale="0.001 0.001 0.001"/>
+    </geometry>
+  </collision>
+</link>
+
+<link name="left_upperarm_1">
+  <inertial>
+    <origin xyz="0.004822373983747685 0.003780200932644827 -0.12057606811409077" rpy="0 0 0"/>
+    <mass value="2.76714670661714"/>
+    <inertia ixx="0.0190807874361862" iyy="0.0172261371575684" izz="0.00515528172454963" ixy="-6.90903513751728e-05" iyz="0.00113254219077807" ixz="-0.00069815872570983"/>
+  </inertial>
+  <visual>
+    <origin xyz="-0.2 -0.04 -0.43" rpy="0 0 0"/>
+    <geometry>
+      <mesh filename="package://isaac_humanbody_description/meshes/left_upperarm_1.stl" scale="0.001 0.001 0.001"/>
+    </geometry>
+    <material name="water_clear"/>
+  </visual>
+  <collision>
+    <origin xyz="-0.2 -0.04 -0.43" rpy="0 0 0"/>
+    <geometry>
+      <mesh filename="package://isaac_humanbody_description/meshes/left_upperarm_1.stl" scale="0.001 0.001 0.001"/>
+    </geometry>
+  </collision>
+</link>
+
+<link name="right_thigh_1">
+  <inertial>
+    <origin xyz="-0.037035208150022175 -0.002441907813143445 -0.16455533500074304" rpy="0 0 0"/>
+    <mass value="8.54423544808816"/>
+    <inertia ixx="0.126272863912218" iyy="0.121838997967264" izz="0.0318015102393351" ixy="0.00104566219932307" iyz="-0.000295239747525669" ixz="-0.00903440898176014"/>
+  </inertial>
+  <visual>
+    <origin xyz="0.075 0.02 0.06" rpy="0 0 0"/>
+    <geometry>
+      <mesh filename="package://isaac_humanbody_description/meshes/right_thigh_1.stl" scale="0.001 0.001 0.001"/>
+    </geometry>
+    <material name="water_clear"/>
+  </visual>
+  <collision>
+    <origin xyz="0.075 0.02 0.06" rpy="0 0 0"/>
+    <geometry>
+      <mesh filename="package://isaac_humanbody_description/meshes/right_thigh_1.stl" scale="0.001 0.001 0.001"/>
+    </geometry>
+  </collision>
+</link>
+
+<link name="left_thigh_1">
+  <inertial>
+    <origin xyz="0.0370781345500954 -0.0026667712229349848 -0.16500101962438507" rpy="0 0 0"/>
+    <mass value="8.54222455336443"/>
+    <inertia ixx="0.126534411329488" iyy="0.122156065439648" izz="0.0317379788117902" ixy="-0.00108384325398064" iyz="-0.000113331858861643" ixz="0.00906910398745212"/>
+  </inertial>
+  <visual>
+    <origin xyz="-0.075 0.02 0.06" rpy="0 0 0"/>
+    <geometry>
+      <mesh filename="package://isaac_humanbody_description/meshes/left_thigh_1.stl" scale="0.001 0.001 0.001"/>
+    </geometry>
+    <material name="water_clear"/>
+  </visual>
+  <collision>
+    <origin xyz="-0.075 0.02 0.06" rpy="0 0 0"/>
+    <geometry>
+      <mesh filename="package://isaac_humanbody_description/meshes/left_thigh_1.stl" scale="0.001 0.001 0.001"/>
+    </geometry>
+  </collision>
+</link>
+
+<link name="left_lowerarm_1">
+  <inertial>
+    <origin xyz="-0.0030433735600446377 -0.030008958279502916 -0.14984142117224902" rpy="0 0 0"/>
+    <mass value="1.76505514699719"/>
+    <inertia ixx="0.0217759670923124" iyy="0.0207509803193669" izz="0.00257423643394576" ixy="-0.000208040259596221" iyz="-0.00333221044701176" ixz="-0.000259807757209372"/>
+  </inertial>
+  <visual>
+    <origin xyz="-0.211499 -0.06 -0.17472" rpy="0 0 0"/>
+    <geometry>
+      <mesh filename="package://isaac_humanbody_description/meshes/left_lowerarm_1.stl" scale="0.001 0.001 0.001"/>
+    </geometry>
+    <material name="water_clear"/>
+  </visual>
+  <collision>
+    <origin xyz="-0.211499 -0.06 -0.17472" rpy="0 0 0"/>
+    <geometry>
+      <mesh filename="package://isaac_humanbody_description/meshes/left_lowerarm_1.stl" scale="0.001 0.001 0.001"/>
+    </geometry>
+  </collision>
+</link>
+
+<link name="right_lowerarm_1">
+  <inertial>
+    <origin xyz="0.002909345268541308 -0.0299116911005268 -0.15032009567327717" rpy="0 0 0"/>
+    <mass value="1.77301696228248"/>
+    <inertia ixx="0.0218962343498751" iyy="0.0208444949442169" izz="0.002588484518426" ixy="0.000190854789740963" iyz="-0.00338216827068561" ixz="0.000195317609982907"/>
+  </inertial>
+  <visual>
+    <origin xyz="0.211499 -0.06 -0.17472" rpy="0 0 0"/>
+    <geometry>
+      <mesh filename="package://isaac_humanbody_description/meshes/right_lowerarm_1.stl" scale="0.001 0.001 0.001"/>
+    </geometry>
+    <material name="water_clear"/>
+  </visual>
+  <collision>
+    <origin xyz="0.211499 -0.06 -0.17472" rpy="0 0 0"/>
+    <geometry>
+      <mesh filename="package://isaac_humanbody_description/meshes/right_lowerarm_1.stl" scale="0.001 0.001 0.001"/>
+    </geometry>
+  </collision>
+</link>
+
+<link name="left_tib_1">
+  <inertial>
+    <origin xyz="0.011152907147432084 0.041754154142721385 -0.165749187527168" rpy="0 0 0"/>
+    <mass value="3.58115532767917"/>
+    <inertia ixx="0.0475484098542995" iyy="0.046132330915452" izz="0.00633585859929256" ixy="-0.00045621150415791" iyz="0.00410534351454336" ixz="0.00119978218754613"/>
+  </inertial>
+  <visual>
+    <origin xyz="-0.14 0.015 0.45" rpy="0 0 0"/>
+    <geometry>
+      <mesh filename="package://isaac_humanbody_description/meshes/left_tib_1.stl" scale="0.001 0.001 0.001"/>
+    </geometry>
+    <material name="water_clear"/>
+  </visual>
+  <collision>
+    <origin xyz="-0.14 0.015 0.45" rpy="0 0 0"/>
+    <geometry>
+      <mesh filename="package://isaac_humanbody_description/meshes/left_tib_1.stl" scale="0.001 0.001 0.001"/>
+    </geometry>
+  </collision>
+</link>
+
+<link name="right_tib_1">
+  <inertial>
+    <origin xyz="-0.010727316303595108 0.04187848699488607 -0.16704055294975906" rpy="0 0 0"/>
+    <mass value="3.61690570217021"/>
+    <inertia ixx="0.0486426391606767" iyy="0.047156246791435" izz="0.00643821058274389" ixy="0.000505710873786596" iyz="0.00428566688706347" ixz="-0.00124926219716026"/>
+  </inertial>
+  <visual>
+    <origin xyz="0.14 0.015 0.450013" rpy="0 0 0"/>
+    <geometry>
+      <mesh filename="package://isaac_humanbody_description/meshes/right_tib_1.stl" scale="0.001 0.001 0.001"/>
+    </geometry>
+    <material name="water_clear"/>
+  </visual>
+  <collision>
+    <origin xyz="0.14 0.015 0.450013" rpy="0 0 0"/>
+    <geometry>
+      <mesh filename="package://isaac_humanbody_description/meshes/right_tib_1.stl" scale="0.001 0.001 0.001"/>
+    </geometry>
+  </collision>
+</link>
+
+<link name="right_foot_1">
+  <inertial>
+    <origin xyz="-0.006966054943462974 -0.053227667651025726 -0.06840317625015657" rpy="0 0 0"/>
+    <mass value="1.45099789542203"/>
+    <inertia ixx="0.00754291497954651" iyy="0.0019716299894037" izz="0.00708409616949107" ixy="-0.000314460306649409" iyz="-0.00108467211990128" ixz="-0.000200961916821618"/>
+  </inertial>
+  <visual>
+    <origin xyz="0.155 -0.03 0.875278" rpy="0 0 0"/>
+    <geometry>
+      <mesh filename="package://isaac_humanbody_description/meshes/right_foot_1.stl" scale="0.001 0.001 0.001"/>
+    </geometry>
+    <material name="water_clear"/>
+  </visual>
+  <collision>
+    <origin xyz="0.155 -0.03 0.875278" rpy="0 0 0"/>
+    <geometry>
+      <mesh filename="package://isaac_humanbody_description/meshes/right_foot_1.stl" scale="0.001 0.001 0.001"/>
+    </geometry>
+  </collision>
+</link>
+
+<link name="left_foot_1">
+  <inertial>
+    <origin xyz="0.006901298298895964 -0.05361977325451614 -0.0683757944233575" rpy="0 0 0"/>
+    <mass value="1.4353093709223"/>
+    <inertia ixx="0.00745619933881647" iyy="0.0019477852734362" izz="0.00700085491967847" ixy="0.000304189959630737" iyz="-0.00111219734766826" ixz="0.000206783034577968"/>
+  </inertial>
+  <visual>
+    <origin xyz="-0.155 -0.03 0.875" rpy="0 0 0"/>
+    <geometry>
+      <mesh filename="package://isaac_humanbody_description/meshes/left_foot_1.stl" scale="0.001 0.001 0.001"/>
+    </geometry>
+    <material name="water_clear"/>
+  </visual>
+  <collision>
+    <origin xyz="-0.155 -0.03 0.875" rpy="0 0 0"/>
+    <geometry>
+      <mesh filename="package://isaac_humanbody_description/meshes/left_foot_1.stl" scale="0.001 0.001 0.001"/>
+    </geometry>
+  </collision>
+</link>
+
+<joint name="waist" type="continuous">
+  <origin xyz="0.0 0.0 0.1" rpy="0 0 0"/>
+  <parent link="base_link"/>
+  <child link="upperbody_1"/>
+  <axis xyz="0.0 0.0 1.0"/>
+</joint>
+
+<joint name="right_shoulder" type="continuous">
+  <origin xyz="-0.2 0.04 0.33" rpy="0 0 0"/>
+  <parent link="upperbody_1"/>
+  <child link="right_upperarm_1"/>
+  <axis xyz="0.0 0.0 1.0"/>
+</joint>
+
+<joint name="left_shoulder" type="continuous">
+  <origin xyz="0.2 0.04 0.33" rpy="0 0 0"/>
+  <parent link="upperbody_1"/>
+  <child link="left_upperarm_1"/>
+  <axis xyz="0.0 0.0 1.0"/>
+</joint>
+
+<joint name="right_thigh" type="continuous">
+  <origin xyz="-0.075 -0.02 -0.06" rpy="0 0 0"/>
+  <parent link="base_link"/>
+  <child link="right_thigh_1"/>
+  <axis xyz="0.0 0.0 1.0"/>
+</joint>
+
+<joint name="left_thigh" type="continuous">
+  <origin xyz="0.075 -0.02 -0.06" rpy="0 0 0"/>
+  <parent link="base_link"/>
+  <child link="left_thigh_1"/>
+  <axis xyz="0.0 0.0 1.0"/>
+</joint>
+
+<joint name="left_elbow" type="continuous">
+  <origin xyz="0.011499 0.02 -0.25528" rpy="0 0 0"/>
+  <parent link="left_upperarm_1"/>
+  <child link="left_lowerarm_1"/>
+  <axis xyz="1.0 0.0 0.0"/>
+</joint>
+
+<joint name="right_elbow" type="continuous">
+  <origin xyz="-0.011499 0.02 -0.25528" rpy="0 0 0"/>
+  <parent link="right_upperarm_1"/>
+  <child link="right_lowerarm_1"/>
+  <axis xyz="1.0 0.0 0.0"/>
+</joint>
+
+<joint name="left_knee" type="continuous">
+  <origin xyz="0.065 0.005 -0.39" rpy="0 0 0"/>
+  <parent link="left_thigh_1"/>
+  <child link="left_tib_1"/>
+  <axis xyz="1.0 0.0 0.0"/>
+</joint>
+
+<joint name="right_knee" type="continuous">
+  <origin xyz="-0.065 0.005 -0.390013" rpy="0 0 0"/>
+  <parent link="right_thigh_1"/>
+  <child link="right_tib_1"/>
+  <axis xyz="1.0 0.0 0.0"/>
+</joint>
+
+<joint name="right_ankle" type="continuous">
+  <origin xyz="-0.015 0.045 -0.425265" rpy="0 0 0"/>
+  <parent link="right_tib_1"/>
+  <child link="right_foot_1"/>
+  <axis xyz="1.0 0.0 0.0"/>
+</joint>
+
+<joint name="left_ankle" type="continuous">
+  <origin xyz="0.015 0.045 -0.425" rpy="0 0 0"/>
+  <parent link="left_tib_1"/>
+  <child link="left_foot_1"/>
+  <axis xyz="1.0 0.0 0.0"/>
+</joint>
+
+</robot>
