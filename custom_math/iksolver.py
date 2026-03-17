@@ -203,7 +203,7 @@ class OSCIKSolver(BaseIKSolver):
                  target_types=["pose_abs"], # pose (x,y,z,qx,qy,qz,qw), wrench (fx,fy,fz,mx,my,mz)
                  impedance_mode="variable_kp",
                  inertial_dynamics_decoupling=True,
-                 partial_inertial_dynamics_decoupling=False,
+                 partial_inertial_dynamics_decoupling=True,
                  gravity_compensation=True,
                  motion_damping_ratio_task=1.0,
                  contact_wrench_stiffness_task=[0.0, 0.0, 0.0, 0.0, 0.0, 0.0],

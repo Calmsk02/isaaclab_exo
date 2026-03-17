@@ -42,13 +42,15 @@ from isaaclab.utils.math import (
 ####################################
 # Part 2. Set Scene Configurations #
 ####################################
-from robots.humanbody import HUMANBODY_CFG # import robot configuration
-from robotics.iksolver import DiffIKSolver, OSCIKSolver
+from robots.humanbody import HUMANBODY_CFG, HumanbodyEnv, HumanbodyEnvCfg # import robot configuration
+from custom_math.utils import getRobotDynamicProperties, getRobotInformation
+from custom_math.iksolver import DiffIKSolver, OSCIKSolver
+from custom_math.quaternion import *
 
-# # Robot actuator parameters setup
-# for _, actuator_cfg in HUMANBODY_CFG.actuators.items():
-#     actuator_cfg.stiffness = 0.0
-#     actuator_cfg.damping = 0.0
+# Robot actuator parameters setup
+for _, actuator_cfg in HUMANBODY_CFG.actuators.items():
+    actuator_cfg.stiffness = 0.0
+    actuator_cfg.damping = 0.0
 
 # Scene
 @configclass
@@ -74,6 +76,18 @@ def run_simulator(sim: sim_utils.SimulationContext, scene: InteractiveScene):
     
     # get robot from scene entities
     robot = scene["robot"]
+
+    print(getRobotInformation(robot))
+
+    joint_limits = robot.data.joint_pos_limits
+    joint_lower = joint_limits[0,:,0]
+    joint_upper = joint_limits[0,:,1]
+    print(joint_lower, joint_upper)
+
+    effort_limits = robot.data.joint_effort_limits
+    print(effort_limits)
+
+    exit()
 
     # Obtain indices for the end-effector and arm joints
     l_arm_joint_ids, _ = robot.find_joints(["left_shoulder_.*", "left_elbow_.*"])
@@ -102,7 +116,7 @@ def run_simulator(sim: sim_utils.SimulationContext, scene: InteractiveScene):
                                       preserve_order=True)
     l_leg_entity_cfg = SceneEntityCfg("robot", 
                                       joint_ids=l_leg_joint_ids, 
-                                      body_names=["base_link", "left_foot"], 
+                                      body_names=["upperbody", "left_foot"], 
                                       preserve_order=True)
     r_leg_entity_cfg = SceneEntityCfg("robot", 
                                       joint_ids=r_leg_joint_ids, 
@@ -159,18 +173,28 @@ def run_simulator(sim: sim_utils.SimulationContext, scene: InteractiveScene):
     print_robot_info()
 
     # Differential IK solver
-    ik_solver_l_arm = DiffIKSolver("L_Arm", sim, scene, l_arm_entity_cfg, command_type="pose", ik_method="pinv")
-    ik_solver_r_arm = DiffIKSolver("R_Arm", sim, scene, r_arm_entity_cfg, command_type="pose", ik_method="pinv")
-    ik_solver_l_leg = DiffIKSolver("L_Leg", sim, scene, l_leg_entity_cfg, command_type="pose", ik_method="pinv")
-    ik_solver_r_leg = DiffIKSolver("R_Leg", sim, scene, r_leg_entity_cfg, command_type="pose", ik_method="pinv")
-    ik_solver_waist = DiffIKSolver("Waist", sim, scene, waist_entity_cfg, command_type="pose", ik_method="pinv")
+    # ik_solver_l_arm = DiffIKSolver("L_Arm", sim, scene, l_arm_entity_cfg, command_type="pose", ik_method="pinv")
+    # ik_solver_r_arm = DiffIKSolver("R_Arm", sim, scene, r_arm_entity_cfg, command_type="pose", ik_method="pinv")
+    # ik_solver_l_leg = DiffIKSolver("L_Leg", sim, scene, l_leg_entity_cfg, command_type="pose", ik_method="pinv")
+    # ik_solver_r_leg = DiffIKSolver("R_Leg", sim, scene, r_leg_entity_cfg, command_type="pose", ik_method="pinv")
+    # ik_solver_waist = DiffIKSolver("Waist", sim, scene, waist_entity_cfg, command_type="pose", ik_method="pinv")
 
     # # Operational Space IK solver
-    # ik_solver_l_arm = OSCIKSolver("L_Arm", sim, scene, l_arm_entity_cfg, target_types=["pose_abs"], impedance_mode="fixed")
-    # ik_solver_r_arm = OSCIKSolver("R_Arm", sim, scene, r_arm_entity_cfg, target_types=["pose_abs"], impedance_mode="fixed")
-    # ik_solver_l_leg = OSCIKSolver("L_Leg", sim, scene, l_leg_entity_cfg, target_types=["pose_abs"], impedance_mode="fixed")
-    # ik_solver_r_leg = OSCIKSolver("R_Leg", sim, scene, r_leg_entity_cfg, target_types=["pose_abs"], impedance_mode="fixed")
-    # ik_solver_waist = OSCIKSolver("Waist", sim, scene, waist_entity_cfg, target_types=["pose_abs"], impedance_mode="fixed")
+    ik_solver_l_arm = OSCIKSolver("L_Arm", sim, scene, l_arm_entity_cfg, 
+                                  target_types=["pose_abs"], 
+                                  impedance_mode="fixed")
+    ik_solver_r_arm = OSCIKSolver("R_Arm", sim, scene, r_arm_entity_cfg, 
+                                  target_types=["pose_abs"], 
+                                  impedance_mode="fixed")
+    ik_solver_l_leg = OSCIKSolver("L_Leg", sim, scene, l_leg_entity_cfg, 
+                                  target_types=["pose_abs"], 
+                                  impedance_mode="fixed")
+    ik_solver_r_leg = OSCIKSolver("R_Leg", sim, scene, r_leg_entity_cfg, 
+                                  target_types=["pose_abs"], 
+                                  impedance_mode="fixed")
+    ik_solver_waist = OSCIKSolver("Waist", sim, scene, waist_entity_cfg, 
+                                  target_types=["pose_abs"], 
+                                  impedance_mode="fixed")
 
     target_l_arm_pose = ik_solver_l_arm.init_ee_pose_b.clone()
     target_r_arm_pose = ik_solver_r_arm.init_ee_pose_b.clone()
@@ -194,29 +218,30 @@ def run_simulator(sim: sim_utils.SimulationContext, scene: InteractiveScene):
             ik_solver_l_leg.reset()
             ik_solver_r_leg.reset()
             ik_solver_waist.reset()
-
-            target_r_leg_pose[:,1] -= 0.03
-            target_r_leg_pose[:,2] += 0.03
+            
+            target_l_leg_pose[:,1] -= 0.05
+            target_l_leg_pose[:,2] += 0.05
             ik_solver_l_arm.set_command(target_l_arm_pose)
             ik_solver_r_arm.set_command(target_r_arm_pose)
             ik_solver_l_leg.set_command(target_l_leg_pose)
             ik_solver_r_leg.set_command(target_r_leg_pose)
 
-            # reset target pose
-            robot.update(dt=sim_dt)
         else:
-            
+            print("=== root ===")
+            print(robot.data.root_pos_w[0])
+            print(robot.data.root_quat_w[0])
+
             # apply actions (Diff)
-            l_arm_joint_pos_des = ik_solver_l_arm.compute()
-            robot.set_joint_position_target(l_arm_joint_pos_des, joint_ids=l_arm_joint_ids)
-            r_arm_joint_pos_des = ik_solver_r_arm.compute()
-            robot.set_joint_position_target(r_arm_joint_pos_des, joint_ids=r_arm_joint_ids)
-            l_leg_joint_pos_des = ik_solver_l_leg.compute()
-            robot.set_joint_position_target(l_leg_joint_pos_des, joint_ids=l_leg_joint_ids)
-            r_leg_joint_pos_des = ik_solver_r_leg.compute()
-            robot.set_joint_position_target(r_leg_joint_pos_des, joint_ids=r_leg_joint_ids)
-            waist_joint_pos_des = ik_solver_waist.compute()
-            robot.set_joint_position_target(waist_joint_pos_des, joint_ids=waist_joint_ids)
+            # l_arm_joint_pos_des = ik_solver_l_arm.compute()
+            # robot.set_joint_position_target(l_arm_joint_pos_des, joint_ids=l_arm_joint_ids)
+            # r_arm_joint_pos_des = ik_solver_r_arm.compute()
+            # robot.set_joint_position_target(r_arm_joint_pos_des, joint_ids=r_arm_joint_ids)
+            # l_leg_joint_pos_des = ik_solver_l_leg.compute()
+            # robot.set_joint_position_target(l_leg_joint_pos_des, joint_ids=l_leg_joint_ids)
+            # r_leg_joint_pos_des = ik_solver_r_leg.compute()
+            # robot.set_joint_position_target(r_leg_joint_pos_des, joint_ids=r_leg_joint_ids)
+            # waist_joint_pos_des = ik_solver_waist.compute()
+            # robot.set_joint_position_target(waist_joint_pos_des, joint_ids=waist_joint_ids)
             
             # # apply actions (OSC)
             # l_arm_joint_effort = ik_solver_l_arm.compute()
@@ -230,7 +255,7 @@ def run_simulator(sim: sim_utils.SimulationContext, scene: InteractiveScene):
             # waist_joint_effort = ik_solver_waist.compute()
             # robot.set_joint_effort_target(waist_joint_effort, joint_ids=waist_joint_ids)
 
-            robot.write_data_to_sim()
+            # robot.write_data_to_sim()
             
 
         # perform step
