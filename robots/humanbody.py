@@ -212,6 +212,7 @@ class HumanbodyEnv(DirectRLEnv):
         self.potentials = torch.zeros(self.num_envs, dtype=torch.float32, device=self.sim.device)
         self.prev_potentials = torch.zeros_like(self.potentials)
         self.targets = torch.tensor([3, 0, 0],dtype=torch.float32, device=self.sim.device).repeat((self.num_envs, 1))
+        self.targets += self.scene.env_origins
         self.heading_vec = torch.tensor([1, 0, 0], dtype=torch.float32, device=self.sim.device).repeat((self.num_envs, 1))
         self.up_vec = torch.tensor([0, 0, 1], dtype=torch.float32, device=self.sim.device).repeat((self.num_envs, 1))
         
