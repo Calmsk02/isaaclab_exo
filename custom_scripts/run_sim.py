@@ -42,10 +42,10 @@ from isaaclab.utils.math import (
 ####################################
 # Part 2. Set Scene Configurations #
 ####################################
-from robots.humanbody import HUMANBODY_CFG, HumanbodyEnv, HumanbodyEnvCfg # import robot configuration
-from custom_math.utils import getRobotDynamicProperties, getRobotInformation
-from custom_math.iksolver import DiffIKSolver, OSCIKSolver
-from custom_math.quaternion import *
+from msk_isaac.robots.humanbody import HUMANBODY_CFG, HumanbodyEnv, HumanbodyEnvCfg # import robot configuration
+from msk_isaac.custom_math.utils import getRobotDynamicProperties, getRobotInformation
+from msk_isaac.custom_math.iksolver import DiffIKSolver, OSCIKSolver
+from msk_isaac.custom_math.quaternion import *
 
 # Robot actuator parameters setup
 for _, actuator_cfg in HUMANBODY_CFG.actuators.items():

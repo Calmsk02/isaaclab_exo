@@ -14,22 +14,22 @@ from isaaclab.terrains import TerrainImporterCfg
 from isaaclab.utils import configclass
 
 # Get asset path
-import os, math
-ASSET_PATH = os.path.join(os.path.dirname(os.path.abspath(os.path.dirname(__file__))), 'assets')
+from msk_isaac import ASSET_PATH
 
-# Data class
+# 
 from dataclasses import dataclass
+import math
 
 # Custom packages
-from custom_math.quaternion import quat_conjugate, quat_mul, quat_rotate, quat_rotate_inverse, quat_to_euler
-from custom_math.math import normalize, normalize_angle
+from msk_isaac.custom_math.quaternion import quat_conjugate, quat_mul, quat_rotate, quat_rotate_inverse, quat_to_euler
+from msk_isaac.custom_math.math import normalize, normalize_angle
 
 #######################
 # Robot Configuration #
 #######################
 HUMANBODY_CFG = ArticulationCfg(
     spawn=sim_utils.UsdFileCfg(
-        usd_path=f"/home/mskdyros/msk_ws/msk_isaac/assets/isaac_humanbody_description/urdf/isaac_humanbody_float_base/isaac_humanbody.usd",
+        usd_path=f"{ASSET_PATH}/isaac_humanbody_description/urdf/isaac_humanbody_float_base/isaac_humanbody.usd",
         activate_contact_sensors=True,
         rigid_props=sim_utils.RigidBodyPropertiesCfg(
             disable_gravity=False,
