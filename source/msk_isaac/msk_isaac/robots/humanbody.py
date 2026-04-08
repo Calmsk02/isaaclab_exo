@@ -12,6 +12,8 @@ from isaaclab.managers import SceneEntityCfg
 from isaaclab.sim import SimulationCfg
 from isaaclab.terrains import TerrainImporterCfg
 from isaaclab.utils import configclass
+from isaaclab.markers import VisualizationMarkers
+from isaaclab.markers.config import FRAME_MARKER_CFG
 
 # Get asset path
 from msk_isaac import ASSET_PATH
@@ -29,7 +31,7 @@ from msk_isaac.custom_math.math import normalize, normalize_angle
 #######################
 HUMANBODY_CFG = ArticulationCfg(
     spawn=sim_utils.UsdFileCfg(
-        usd_path=f"{ASSET_PATH}/isaac_humanbody_description/urdf/isaac_humanbody_float_base/isaac_humanbody.usd",
+        usd_path=f"{ASSET_PATH}/isaac_humanbody_description/urdf/isaac_humanbody/isaac_humanbody.usd",
         activate_contact_sensors=True,
         rigid_props=sim_utils.RigidBodyPropertiesCfg(
             disable_gravity=False,
@@ -46,7 +48,7 @@ HUMANBODY_CFG = ArticulationCfg(
     ),
     init_state=ArticulationCfg.InitialStateCfg(
         pos=(0.0, 0.0, 1.0),
-        rot=(math.sin(math.pi/4), 0.0, 0.0, math.cos(math.pi/4)),
+        rot=(math.cos(math.pi/4), 0.0, 0.0, math.sin(math.pi/4)),
         joint_pos={".*": 0.0},
         joint_vel={".*": 0.0},
     ),
@@ -159,9 +161,9 @@ for _, actuator_cfg in HUMANBODY_CFG.actuators.items():
 class HumanbodyEnvCfg(DirectRLEnvCfg):
     # required
     decimation = 2
-    episode_length_s = 15.0
+    episode_length_s = 10.0
     action_space = 23
-    observation_space = 12 + 3 * action_space
+    observation_space = 10 + 3 * action_space
     state_space = 0
 
     # simulation
@@ -184,7 +186,7 @@ class HumanbodyEnvCfg(DirectRLEnvCfg):
 
     # scene
     scene: InteractiveSceneCfg = InteractiveSceneCfg(
-        num_envs=500, env_spacing=4.0, replicate_physics=False, clone_in_fabric=False
+        num_envs=500, env_spacing=10.0, replicate_physics=False, clone_in_fabric=False
     )
 
     # robot
@@ -199,35 +201,126 @@ class HumanbodyEnv(DirectRLEnv):
 
     def __init__(self, cfg: HumanbodyEnvCfg, render_mode: str | None=None, **kwargs):
         super().__init__(cfg, render_mode, **kwargs)
-        # init once (not updated)
+        # Torso (base) Frame
+        self.torso_pos_w = self.robot.data.root_pos_w
+        self.torso_quat_w = self.robot.data.root_quat_w
+        self.inv_start_rot = quat_conjugate(self.torso_quat_w)
+
+        # Fixed Frame (world) : pos = (x y z), quat = (w x y z)
+        self.origin_pos_w = torch.tensor([0,0,0], dtype=torch.float32, device=self.sim.device).repeat((self.num_envs, 1))
+        self.origin_quat_w = torch.tensor([1,0,0,0], dtype=torch.float32, device=self.sim.device).repeat((self.num_envs, 1))
+
+        # Joint properties
         self._joint_dof_idx, self.joint_names = self.robot.find_joints(".*")
-        self.root_quat_w = self.robot.data.root_quat_w
-        self.inv_start_rot = quat_conjugate(self.root_quat_w)
         self.joint_limits = self.robot.data.joint_pos_limits
         self.joint_limits_lower = self.joint_limits[:, :, 0]
         self.joint_limits_upper = self.joint_limits[:, :, 1]
         self.effort_limits = self.robot.data.joint_effort_limits
         self.motor_effort_ratio = torch.ones_like(self.effort_limits, device=self.sim.device)
 
+        # EE Body indexes for easy control
+        up_body_ids, _ = self.robot.find_bodies("upperbody")
+        self.up_body_idx = up_body_ids[0]
+        l_arm_ids, _ = self.robot.find_bodies("left_lowerarm")
+        self.l_arm_idx = l_arm_ids[0]
+        r_arm_ids, _ = self.robot.find_bodies("right_lowerarm")
+        self.r_arm_idx = r_arm_ids[0]
+        l_leg_ids, _ = self.robot.find_bodies("left_tib")
+        self.l_leg_idx = l_leg_ids[0]
+        r_leg_ids, _ = self.robot.find_bodies("right_tib")
+        self.r_leg_idx = r_leg_ids[0]
+        l_foot_ids, _ = self.robot.find_bodies("left_foot")
+        self.l_foot_idx = l_foot_ids[0]
+        r_foot_ids, _ = self.robot.find_bodies("right_foot")
+        self.r_foot_idx = r_foot_ids[0]
+        
+        # Target
+        # potential : negative 2-norm of base-to-target vector
+        self.targets = torch.tensor([100, 0, 0],dtype=torch.float32, device=self.sim.device).repeat((self.num_envs, 1))
+        self.targets += self.scene.env_origins
+        self.targets_quat = self.origin_quat_w.clone()
         self.potentials = torch.zeros(self.num_envs, dtype=torch.float32, device=self.sim.device)
         self.prev_potentials = torch.zeros_like(self.potentials)
-        self.targets = torch.tensor([3, 0, 0],dtype=torch.float32, device=self.sim.device).repeat((self.num_envs, 1))
-        self.targets += self.scene.env_origins
-        self.heading_vec = torch.tensor([1, 0, 0], dtype=torch.float32, device=self.sim.device).repeat((self.num_envs, 1))
-        self.up_vec = torch.tensor([0, 0, 1], dtype=torch.float32, device=self.sim.device).repeat((self.num_envs, 1))
         
-        self.basis_vec0 = self.heading_vec.clone()
-        self.basis_vec1 = self.up_vec.clone()
+        # Heading and up vectors
+        self.heading_vec = torch.tensor([0, -1, 0], dtype=torch.float32, device=self.sim.device).repeat((self.num_envs, 1))
+        self.up_vec = torch.tensor([0, 0, 1], dtype=torch.float32, device=self.sim.device).repeat((self.num_envs, 1))
 
-        self.ang_vel_scale = 0.25
-        self.joint_vel_scale = 0.1
-        self.heading_weight = 0.5
-        self.up_weight = 0.1
-        self.actions_cost_scale = 0.01
-        self.alive_reward_scale = 2.0
-        self.energy_cost_scale = 0.05
-        self.death_cost = -1
-        self.termination_height = 0.7
+        # References for heading and up vectors
+        self.basis_heading_vec = self.heading_vec.clone()
+        self.basis_up_vec = self.up_vec.clone()
+        self.basis_side_vec = torch.tensor([1, 0, 0], dtype=torch.float32, device=self.sim.device).repeat((self.num_envs, 1))
+
+        # Time step control
+        self.time_step = torch.zeros(self.num_envs, dtype=torch.int32, device=self.sim.device)
+
+        ### Gait control ###
+        target_vel = 1.0 # m/s
+        rl_dt = self.cfg.decimation*self.cfg.sim.dt # rl step duration
+        # step frequency [steps/s]
+        f_min = 1.4
+        f_max = 2.0
+        v_ref = 1.0
+        speed_ratio = max(min(target_vel / v_ref, 1.0), 0.0)
+        f_steps = f_min + (f_max -f_min) * speed_ratio
+        # step length
+        step_length = target_vel / f_steps
+        self.foot_diff_amplitude = 0.5 * step_length
+        # gait period
+        self.period = max(10, int(round(1.0 / (f_steps * rl_dt))))
+        
+        # COM calculation
+        self.mass = self.robot.root_physx_view.get_masses().to(self.sim.device)
+
+        # Weights and Scales
+        self.termination_height: float = 0.7
+        self.joint_vel_scale: float = 0.1
+
+        self.alive_reward_scale: float = 2.0
+        self.death_cost: float = -1.0
+        self.heading_weight: float = 0.5
+        self.up_weight: float = 0.5
+        self.energy_cost_scale: float = 0.05
+        self.actions_cost_scale: float = 0.01
+        
+        # Markers for visualization
+        frame_marker_cfg = FRAME_MARKER_CFG.copy()
+        frame_marker_cfg.markers["frame"].scale = (0.15, 0.15, 0.15)
+        self.base_marker = VisualizationMarkers(
+            frame_marker_cfg.replace(prim_path=f"/Visuals/base_marker")
+        )
+        self.goal_marker = VisualizationMarkers(
+            frame_marker_cfg.replace(prim_path=f"/Visuals/goal_marker")
+        )
+        frame_marker_cfg.markers["frame"].scale = (0.1, 0.1, 0.1)
+        self.up_body_marker = VisualizationMarkers(
+            frame_marker_cfg.replace(prim_path=f"/Visuals/upbody_marker")
+        )
+        self.l_arm_marker = VisualizationMarkers(
+            frame_marker_cfg.replace(prim_path=f"/Visuals/larm_marker")
+        )
+        self.r_arm_marker = VisualizationMarkers(
+            frame_marker_cfg.replace(prim_path=f"/Visuals/rarm_marker")
+        ) 
+        self.l_foot_marker = VisualizationMarkers(
+            frame_marker_cfg.replace(prim_path=f"/Visuals/lfoot_marker")
+        ) 
+        self.r_foot_marker = VisualizationMarkers(
+            frame_marker_cfg.replace(prim_path=f"/Visuals/rfoot_marker")
+        )
+        self.goal_marker.visualize(self.targets, self.targets_quat)
+
+        # Print joint information
+        print(f"[INFO]: Joint Information...",
+              f" Dofs: {len(self._joint_dof_idx)}")
+        for i in range(len(self.joint_names)):
+            print(
+                f"Joint {i}: "
+                f"idx={self._joint_dof_idx[i]}, "
+                f"name={self.joint_names[i]}, "
+                f"lim=({self.joint_limits_lower[0, i].item():.3f}, "
+                f"{self.joint_limits_upper[0, i].item():.3f})"
+            )
 
     def _setup_scene(self):
         # robot
@@ -249,69 +342,130 @@ class HumanbodyEnv(DirectRLEnv):
 
     def _pre_physics_step(self, actions: torch.Tensor):
         self.actions = actions.clone()
-        self.actions = torch.clamp(self.actions, -1, 1)
-
+        self.actions = torch.clamp(self.actions, -1.0, 1.0)
+        
     def _apply_action(self):
         action_scale = 1.0
         forces = action_scale * self.effort_limits[:, self._joint_dof_idx] * self.actions
         self.robot.set_joint_effort_target(forces, joint_ids=self._joint_dof_idx)
 
     def _compute_intermediate_values(self):
-        # torso (articulation root) data
+        # Torso (articulation root) data
         self.torso_pos_w = self.robot.data.root_pos_w
         self.torso_quat_w = self.robot.data.root_quat_w
         self.torso_lin_vel_w = self.robot.data.root_lin_vel_w
         self.torso_ang_vel_w = self.robot.data.root_ang_vel_w
+        
+        # Body data
+        # local: (x, y, z) -> world: (y, -x, z)
+        self.up_body_pos_w = self.robot.data.body_pos_w[:, self.up_body_idx]
+        self.up_body_quat_w = self.robot.data.body_quat_w[:, self.up_body_idx]
+        self.l_arm_pos_w = self.robot.data.body_pos_w[:, self.l_arm_idx]
+        self.l_arm_quat_w = self.robot.data.body_quat_w[:, self.l_arm_idx]
+        self.r_arm_pos_w = self.robot.data.body_pos_w[:, self.r_arm_idx]
+        self.r_arm_quat_w = self.robot.data.body_quat_w[:, self.r_arm_idx]
+        self.l_leg_pos_w = self.robot.data.body_pos_w[:, self.l_leg_idx]
+        self.l_leg_quat_w = self.robot.data.body_quat_w[:, self.l_leg_idx]
+        self.r_leg_pos_w = self.robot.data.body_pos_w[:, self.r_leg_idx]
+        self.r_leg_quat_w = self.robot.data.body_quat_w[:, self.r_leg_idx]
+        self.l_foot_pos_w = self.robot.data.body_pos_w[:, self.l_foot_idx]
+        self.l_foot_quat_w = self.robot.data.body_quat_w[:, self.l_foot_idx]
+        self.r_foot_pos_w = self.robot.data.body_pos_w[:, self.r_foot_idx]
+        self.r_foot_quat_w = self.robot.data.body_quat_w[:, self.r_foot_idx]
 
-        # joint data
+        # Joint data
         self.joint_pos = self.robot.data.joint_pos
         self.joint_vel = self.robot.data.joint_vel
 
+        # Marker update
+        self.base_marker.visualize(self.torso_pos_w, self.torso_quat_w)
+        self.up_body_marker.visualize(self.up_body_pos_w, self.up_body_quat_w)
+        self.l_arm_marker.visualize(self.l_arm_pos_w, self.l_arm_quat_w)
+        self.r_arm_marker.visualize(self.r_arm_pos_w, self.r_arm_quat_w)
+        self.l_foot_marker.visualize(self.l_foot_pos_w, self.l_foot_quat_w)
+        self.r_foot_marker.visualize(self.r_foot_pos_w, self.r_foot_quat_w)
+
+        # COM
+        self.com_w = self.robot.data.body_com_pos_w
+
         (
-            self.up_proj,
-            self.heading_proj,
-            self.up_vec,
-            self.heading_vec,
-            self.lin_vel_loc,
-            self.ang_vel_loc,
-            self.roll,
-            self.pitch,
-            self.yaw,
-            self.angle_to_target,
             self.joint_pos_scaled,
+            self.potentials,
             self.prev_potentials,
-            self.potentials
+            self.angle_to_target,
+            self.roll, # world x-axis
+            self.pitch, # world y-axis
+            self.yaw, # world z-axis
+            self.torso_heading_proj, # target vector proj
+            self.torso_up_proj, # local z-axis proj
+            self.lin_vel_loc, # local linear vel
+            self.ang_vel_loc, # local angular vel
+            self.up_body_up_proj,
+            self.l_foot_side_proj, # local x-axis proj
+            self.r_foot_side_proj,
+            self.phase, # gait phase
+            self.l_foot_pos_loc,
+            self.r_foot_pos_loc,
+            self.com_whole, # com
+            self.com_loc,
+
         ) = compute_intermediate_values(
+            self.joint_pos,
+            self.joint_limits_lower,
+            self.joint_limits_upper,
             self.targets,
+            self.potentials,
+            self.prev_potentials,
+            self.basis_heading_vec,
+            self.basis_up_vec,
+            self.basis_side_vec,
+            self.inv_start_rot,
             self.torso_pos_w,
             self.torso_quat_w,
             self.torso_lin_vel_w,
             self.torso_ang_vel_w,
-            self.joint_pos,
-            self.joint_limits_lower,
-            self.joint_limits_upper,
-            self.inv_start_rot,
-            self.basis_vec0,
-            self.basis_vec1,
-            self.potentials,
-            self.prev_potentials,
-            self.cfg.sim.dt
+            self.up_body_quat_w,
+            self.l_foot_pos_w,
+            self.l_foot_quat_w,
+            self.r_foot_pos_w,
+            self.r_foot_quat_w,
+            self.mass,
+            self.com_w,
+            self.time_step,
+            self.period,
+            self.cfg.sim.dt,
         )
 
     def _get_observations(self) -> dict:
+        self._compute_intermediate_values()
+        # print(self.joint_pos_scaled.shape)
+        # print(self.joint_vel.shape)
+        # print(self.potentials.shape)
+        # print(self.roll.shape)
+        # print(self.pitch.shape)
+        # print(self.yaw.shape)
+        # print(self.torso_heading_proj.shape)
+        # print(self.torso_up_proj.shape)
+        # print(self.up_body_up_proj.shape)
+        # print(self.l_foot_side_proj.shape)
+        # print(self.r_foot_side_proj.shape)
+        # print(self.phase.shape)
+        # print(self.com_whole.shape)
+        # print(self.actions.shape)
+        # exit()
         obs = torch.cat(
             (
-                self.torso_pos_w[:, 2].view(-1, 1), # (N,1)
-                self.lin_vel_loc, # (N, 3)
-                self.ang_vel_loc * self.ang_vel_scale, # (N, 3)
-                normalize_angle(self.yaw).unsqueeze(-1), # (N,1)
-                normalize_angle(self.roll).unsqueeze(-1), # (N,1)
-                normalize_angle(self.angle_to_target).unsqueeze(-1), # (N,1)
-                self.up_proj.unsqueeze(-1), # (N,1)
-                self.heading_proj.unsqueeze(-1), # (N,1)
-                self.joint_pos_scaled, # (N,23)
-                self.joint_vel * self.joint_vel_scale, # (N,23)
-                self.actions # (N,23)
+                self.joint_pos_scaled,
+                self.joint_vel * self.joint_vel_scale,
+                self.roll.unsqueeze(-1),
+                self.pitch.unsqueeze(-1),
+                self.yaw.unsqueeze(-1),
+                self.torso_heading_proj.unsqueeze(-1),
+                self.torso_up_proj.unsqueeze(-1),
+                self.up_body_up_proj.unsqueeze(-1),
+                self.phase.unsqueeze(-1),
+                self.com_whole,
+                self.actions
             ),
             dim=-1
         )
@@ -319,27 +473,28 @@ class HumanbodyEnv(DirectRLEnv):
     
     def _get_rewards(self) -> torch.Tensor:
         total_reward = compute_rewards(
-                self.actions,
-                self.reset_terminated,
-                self.up_weight,
-                self.heading_weight,
-                self.heading_proj,
-                self.up_proj,
-                self.joint_vel,
                 self.joint_pos_scaled,
+                self.joint_vel * self.joint_vel_scale,
                 self.potentials,
                 self.prev_potentials,
-                self.actions_cost_scale,
-                self.energy_cost_scale,
-                self.joint_vel_scale,
-                self.death_cost,
-                self.alive_reward_scale,
-                self.motor_effort_ratio
+                self.torso_lin_vel_w,
+                self.torso_ang_vel_w,
+                self.torso_heading_proj,
+                self.torso_up_proj,
+                self.up_body_up_proj,
+                self.l_foot_side_proj,
+                self.r_foot_side_proj,
+                self.phase,
+                self.foot_diff_amplitude,
+                self.l_foot_pos_loc,
+                self.r_foot_pos_loc,
+                self.com_loc,
+                self.actions,
+                self.reset_terminated,
             )
         return total_reward
     
     def _get_dones(self) -> tuple[torch.Tensor, torch.Tensor]:
-        self._compute_intermediate_values()
         time_out = self.episode_length_buf >= self.max_episode_length - 1
         died = self.torso_pos_w[:, 2] < self.termination_height
         return died, time_out
@@ -365,34 +520,47 @@ class HumanbodyEnv(DirectRLEnv):
         to_target[:, 2] = 0.0
         self.potentials[env_ids] = -torch.norm(to_target, p=2, dim=-1) / self.cfg.sim.dt
 
-        self._compute_intermediate_values()
+        self.time_step[env_ids] = 0
 
 
 @torch.jit.script
 def compute_intermediate_values(
-    targets: torch.Tensor,
-    torso_pos_w: torch.Tensor,
-    torso_quat_w: torch.Tensor,
-    torso_lin_vel_w: torch.Tensor,
-    torso_ang_vel_w: torch.Tensor,
-    joint_pos: torch.Tensor,
-    joint_limits_lower: torch.Tensor,
-    joint_limits_upper: torch.Tensor,
-    inv_start_rot: torch.Tensor,
-    basis_vec0: torch.Tensor,
-    basis_vec1: torch.Tensor,
-    potentials: torch.Tensor,
-    prev_potentials: torch.Tensor,
+    joint_pos:torch.Tensor,
+    joint_limits_lower:torch.Tensor,
+    joint_limits_upper:torch.Tensor,
+    targets:torch.Tensor,
+    potentials:torch.Tensor,
+    prev_potentials:torch.Tensor,
+    basis_heading_vec:torch.Tensor,
+    basis_up_vec:torch.Tensor,
+    basis_side_vec:torch.Tensor,
+    inv_start_rot:torch.Tensor,
+    torso_pos_w:torch.Tensor,
+    torso_quat_w:torch.Tensor,
+    torso_lin_vel_w:torch.Tensor,
+    torso_ang_vel_w:torch.Tensor,
+    up_body_quat_w:torch.Tensor,
+    l_foot_pos_w:torch.Tensor,
+    l_foot_quat_w:torch.Tensor,
+    r_foot_pos_w:torch.Tensor,
+    r_foot_quat_w:torch.Tensor,
+    mass:torch.Tensor,
+    com_w:torch.Tensor,
+    time_step:torch.Tensor,
+    period:float,
     dt: float,
 ):
-    # normalize rotation based on init rotation
-    torso_quat_i = quat_mul(inv_start_rot, torso_quat_w)
+    
+    ### JOINT POSITION SCALE ###
+    joint_pos_scaled = 2.0 * (joint_pos - joint_limits_lower) / (joint_limits_upper - joint_limits_lower) - 1.0
 
-    # The axes of torso frame
-    # local -> world
-    heading_vec = quat_rotate(torso_quat_i, basis_vec0)
-    up_vec = quat_rotate(torso_quat_i, basis_vec1)
-
+    ### TORSO CALCULATION ###
+    # The axes of torso frame in world frame
+    # -y direction in torso frame -> x direction in world frame
+    torso_quat_local = quat_mul(inv_start_rot, torso_quat_w)
+    torso_heading_vec = quat_rotate(torso_quat_w, basis_heading_vec)
+    torso_up_vec = quat_rotate(torso_quat_w, basis_up_vec)
+    
     # target vector
     to_target = targets - torso_pos_w
     to_target[:, 2] = 0.0
@@ -401,97 +569,197 @@ def compute_intermediate_values(
     to_target_dir = normalize(to_target)
 
     # heading alignment
-    heading_proj = torch.sum(heading_vec * to_target_dir, dim=-1)
+    torso_heading_proj = torch.sum(torso_heading_vec * to_target_dir, dim=-1)
 
     # up alignment
-    up_proj = up_vec[:, 2]
+    torso_up_proj = torso_up_vec[:, 2]
 
-    # local velocities
-    # world -> local
-    vel_loc = quat_rotate_inverse(torso_quat_i, torso_lin_vel_w)
-    ang_vel_loc = quat_rotate_inverse(torso_quat_i, torso_ang_vel_w)
+    # potential field
+    prev_potentials[:] = potentials
+    potentials = -torch.norm(to_target, p=2, dim=-1) / dt
 
     # roll, pitch, yaw of torso
-    roll, pitch, yaw = quat_to_euler(torso_quat_i)
+    # local: (x,y,z) -> world: (y,-x,z)
+    roll, pitch, yaw = quat_to_euler(torso_quat_local)
+    temp = roll.clone()
+    roll = pitch.clone()
+    pitch = -temp.clone()
 
     # heading angle(yaw)
     heading = torch.atan2(to_target_dir[:, 1], to_target_dir[:, 0])
     angle_to_target = heading - yaw
     angle_to_target = torch.atan2(torch.sin(angle_to_target), torch.cos(angle_to_target))
 
-    # joint pos scaled
-    joint_pos_scaled = 2.0 * (joint_pos - joint_limits_lower) / (joint_limits_upper - joint_limits_lower) - 1.0
-    
-    # potential field
-    prev_potentials[:] = potentials
-    potentials = -torch.norm(to_target, p=2, dim=-1) / dt
+    # local velocities
+    lin_vel_loc = quat_rotate_inverse(torso_quat_local, torso_lin_vel_w)
+    ang_vel_loc = quat_rotate_inverse(torso_quat_local, torso_ang_vel_w)
+
+    ### UPPER BODY CALCULATION ###
+    up_body_up_vec = quat_rotate(up_body_quat_w, basis_up_vec)
+    up_body_up_proj = up_body_up_vec[:, 2]
+
+    ### FOOT CALCULATION ###
+    # left foot direction
+    l_foot_side_vec = quat_rotate(l_foot_quat_w, basis_side_vec)
+    l_foot_side_proj = l_foot_side_vec[:, 1]
+    # right foot direction
+    r_foot_side_vec = quat_rotate(r_foot_quat_w, basis_side_vec)
+    r_foot_side_proj = r_foot_side_vec[:, 1]
+
+    ### GAIT CONTROL ###
+    phase = 2.0 * torch.pi * (time_step.float() / period)
+    l_foot_pos_loc = quat_rotate_inverse(torso_quat_local, l_foot_pos_w - torso_pos_w)
+    r_foot_pos_loc = quat_rotate_inverse(torso_quat_local, r_foot_pos_w - torso_pos_w)
+
+    ### COM CONTROL ###
+    mass = mass.unsqueeze(-1)
+    weighted_pos = com_w * mass
+    com_whole = weighted_pos.sum(dim=1) / mass.sum()
+    com_loc = quat_rotate_inverse(torso_quat_local, com_whole - torso_pos_w)
 
     return (
-        up_proj,
-        heading_proj,
-        up_vec,
-        heading_vec,
-        vel_loc,
-        ang_vel_loc,
+        joint_pos_scaled,
+        potentials,
+        prev_potentials,
+        angle_to_target,
         roll,
         pitch,
         yaw,
-        angle_to_target,
-        joint_pos_scaled,
-        prev_potentials,
-        potentials,
+        torso_heading_proj,
+        torso_up_proj,
+        lin_vel_loc,
+        ang_vel_loc,
+        up_body_up_proj,
+        l_foot_side_proj,
+        r_foot_side_proj,
+        phase,
+        l_foot_pos_loc,
+        r_foot_pos_loc,
+        com_whole,
+        com_loc,
     )
 
 @torch.jit.script
 def compute_rewards(
-    actions: torch.Tensor,
-    reset_terminated: torch.Tensor,
-    up_weight: float,
-    heading_weight: float,
-    heading_proj: torch.Tensor,
-    up_proj: torch.Tensor,
-    dof_vel: torch.Tensor,
-    dof_pos_scaled: torch.Tensor,
+    joint_pos_scaled: torch.Tensor,
+    joint_vel_scaled: torch.Tensor,
     potentials: torch.Tensor,
     prev_potentials: torch.Tensor,
-    actions_cost_scale: float,
-    energy_cost_scale: float,
-    dof_vel_scale: float,
-    death_cost: float,
-    alive_reward_scale: float,
-    motor_effort_ratio: torch.Tensor,
+    lin_vel_w: torch.Tensor,
+    ang_vel_w: torch.Tensor,
+    torso_heading_proj: torch.Tensor,
+    torso_up_proj: torch.Tensor,
+    up_body_up_proj: torch.Tensor,
+    l_foot_side_proj: torch.Tensor,
+    r_foot_side_proj: torch.Tensor,
+    phase: torch.Tensor,
+    foot_diff_amplitude:float,
+    l_foot_pos_loc: torch.Tensor,
+    r_foot_pos_loc: torch.Tensor,
+    com_loc: torch.Tensor,
+    actions: torch.Tensor,
+    reset_terminated: torch.Tensor,
 ):
-    heading_weight_tensor = torch.ones_like(heading_proj) * heading_weight
-    heading_reward = torch.where(heading_proj > 0.8, heading_weight_tensor, heading_weight * heading_proj / 0.8)
+    # weights
+    weight_dof_limit = 0.2
+    weight_progress = 0.0
+    weight_alive = 0.5
+    weight_forward_vel = 1.0
+    weight_lateral_vel = 0.1
+    weight_T_heading = 0.5
+    weight_T_up = 0.3
+    weight_UB_up = 0.3
+    weight_LF = 0.1
+    weight_RF = 0.1
+    weight_step = 1.0
+    weight_cross = 0.3
+    weight_step_witdh = 0.3
+    weight_com = 0.1
+    weight_action = 0.05
+    weight_energy = 0.02
+    weight_death = 2.0
 
-    # aligning up axis of robot and environment
-    up_reward = torch.zeros_like(heading_reward)
-    up_reward = torch.where(up_proj > 0.93, up_reward + up_weight, up_reward)
+    # [Penalty] Soft joint limits
+    limit_margin = 0.98
+    dof_limit_violation = torch.relu(torch.abs(joint_pos_scaled) - limit_margin)
+    dof_at_limit_cost = torch.sum(dof_limit_violation, dim=-1)
 
-    # energy penalty for movement
-    actions_cost = torch.sum(actions**2, dim=-1)
-    electricity_cost = torch.sum(
-        torch.abs(actions * dof_vel * dof_vel_scale) * motor_effort_ratio.unsqueeze(0),
-        dim=-1,
-    )
-
-    # dof at limit cost
-    dof_at_limit_cost = torch.sum(dof_pos_scaled > 0.98, dim=-1)
-
-    # reward for duration of staying alive
-    alive_reward = torch.ones_like(potentials) * alive_reward_scale
+    # [Reward] Progess
     progress_reward = potentials - prev_potentials
 
-    total_reward = (
-        progress_reward
-        + alive_reward
-        + up_reward
-        + heading_reward
-        - actions_cost_scale * actions_cost
-        - energy_cost_scale * electricity_cost
-        - dof_at_limit_cost
+    # [Reward] Alive
+    alive_reward = torch.ones_like(potentials)
+
+    # [Reward] Velocity
+    v_target = 1.0
+    vel_err = lin_vel_w[:, 0] - v_target
+    forward_vel_reward = torch.exp(-4.0 * torch.square(vel_err))
+    lateral_vel_penalty = torch.square(lin_vel_w[:, 1])
+
+    # [Reward] Torso heading direction (to target)
+    one_reward = torch.ones_like(torso_heading_proj)
+    T_heading_reward = torch.where(
+        torso_heading_proj > 0.8, 
+        one_reward, 
+        torch.clamp(torso_heading_proj / 0.8, min=0.0)
     )
-    # adjust reward for fallen agents
+
+    # [Reward] Torso up direction (z-axis)
+    T_up_reward = torch.clamp(torso_up_proj, min=0.0)
+
+    # [Reward] Upper body up direction (z-axis)
+    UB_up_reward = torch.clamp(up_body_up_proj, min=0.0)
+
+    # [Reward] Left foot direction (saggital plane)
+    LF_dir_reward = torch.clamp(l_foot_side_proj, min=0.0)
+
+    # [Reward] Upper body direction (saggital plane)
+    RF_dir_reward = torch.clamp(r_foot_side_proj, min=0.0)
+
+    # [Reward] Footstep control
+    feet_x_diff = l_foot_pos_loc[:, 0] - r_foot_pos_loc[:, 0]
+    feet_x_desired = foot_diff_amplitude * torch.tanh(3.0 * torch.sin(phase))
+    feet_dist_err = feet_x_diff - feet_x_desired
+    step_reward = torch.exp(-50.0 * torch.square(feet_dist_err))
+
+    # [Penalty] Foot cross
+    cross_penalty = torch.relu(-l_foot_pos_loc[:, 1]) + torch.relu(r_foot_pos_loc[:, 1])
+
+    # [Reward] Foot width
+    target_width = 0.12
+    foot_y_dist = torch.abs(l_foot_pos_loc[:, 1] - r_foot_pos_loc[:, 1])
+    width_reward = torch.exp(-50.0 * torch.square(foot_y_dist - target_width))
+
+    # [Reward] COM
+    com_x_target = 0.02
+    com_x_diff = com_loc[:, 0] - com_x_target
+    com_forward_reward = torch.exp(-50.0 * torch.square(com_x_diff))
+
+    # [Penalty] Energy consumption
+    actions_cost = torch.sum(actions**2, dim=-1)
+    electricity_cost = torch.sum(torch.abs(actions *joint_vel_scaled), dim=-1)
+
+    total_reward = (
+        - weight_dof_limit * dof_at_limit_cost
+        + weight_progress * progress_reward
+        + weight_alive * alive_reward
+        + weight_forward_vel * forward_vel_reward
+        - weight_lateral_vel * lateral_vel_penalty
+        + weight_T_heading * T_heading_reward
+        + weight_T_up * T_up_reward
+        + weight_UB_up * UB_up_reward
+        + weight_LF * LF_dir_reward
+        + weight_RF * RF_dir_reward
+        + weight_step * step_reward
+        - weight_cross * cross_penalty
+        + weight_step_witdh * width_reward
+        # + weight_com * com_forward_reward
+        - weight_action * actions_cost
+        - weight_energy * electricity_cost
+    )
+
+    # [Penalty] Death penalty for fallen agents
+    death_cost = -weight_death
     total_reward = torch.where(reset_terminated, torch.ones_like(total_reward) * death_cost, total_reward)
     return total_reward
     
