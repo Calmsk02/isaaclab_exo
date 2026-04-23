@@ -58,14 +58,14 @@ HUMANBODY_CFG = ArticulationCfg(
     actuators={
         "waist_pitch": ImplicitActuatorCfg(
             joint_names_expr=["waist_pitch"],
-            effort_limit_sim=250.0,
+            effort_limit_sim=300.0,
             velocity_limit_sim=10.0,
             stiffness=0.0,
             damping=0.0,
         ),
         "waist_roll": ImplicitActuatorCfg(
             joint_names_expr=["waist_roll"],
-            effort_limit_sim=100.0,
+            effort_limit_sim=250.0,
             velocity_limit_sim=10.0,
             stiffness=0.0,
             damping=0.0,
@@ -199,101 +199,101 @@ class HumanbodyEnv(DirectRLEnv):
     def __init__(self, cfg: HumanbodyEnvCfg, render_mode: str | None=None, **kwargs):
         super().__init__(cfg, render_mode, **kwargs)
         # simulation time
-        self.sim_time_step = 0
-        self.rl_dt = self.cfg.decimation*self.cfg.sim.dt # rl step duration
-        self.env_time_step = torch.zeros(self.num_envs, dtype=torch.int32, device=self.sim.device)
+        self.sim_time_step      = 0
+        self.rl_dt              = self.cfg.decimation*self.cfg.sim.dt # rl step duration
+        self.env_time_step      = torch.zeros(self.num_envs, dtype=torch.int32, device=self.sim.device)
 
         ### Robot Params ###
         # Torso (base) Frame
-        self.torso_pos_w = self.robot.data.root_pos_w
-        self.torso_quat_w = self.robot.data.root_quat_w
-        self.init_torso_pos_w = self.torso_pos_w.clone()
-        self.init_torso_quat_w = self.torso_quat_w.clone()
-        self.inv_start_rot = quat_conjugate(self.init_torso_quat_w)
+        self.torso_pos_w        = self.robot.data.root_pos_w
+        self.torso_quat_w       = self.robot.data.root_quat_w
+        self.init_torso_pos_w   = self.torso_pos_w.clone()
+        self.init_torso_quat_w  = self.torso_quat_w.clone()
+        self.inv_start_rot      = quat_conjugate(self.init_torso_quat_w)
 
         # Joint properties
         self._joint_dof_ids, self.joint_names = self.robot.find_joints(".*")
-        self.joint_limits = self.robot.data.joint_pos_limits
-        self.joint_limits_lower = self.joint_limits[:, :, 0]
-        self.joint_limits_upper = self.joint_limits[:, :, 1]
-        self.effort_limits = self.robot.data.joint_effort_limits
-        self.motor_effort_ratio = torch.ones_like(self.effort_limits, device=self.sim.device)
-        self.UB_joint_ids, _ = self.robot.find_joints([".*shoulder.*", ".*elbow.*"])
-        self.LB_joint_dof_ids, _ = self.robot.find_joints([".*waist.*", ".*thigh.*", ".*knee.*", ".*ankle.*"])
+        self.joint_limits           = self.robot.data.joint_pos_limits
+        self.joint_limits_lower     = self.joint_limits[:, :, 0]
+        self.joint_limits_upper     = self.joint_limits[:, :, 1]
+        self.effort_limits          = self.robot.data.joint_effort_limits
+        self.motor_effort_ratio     = torch.ones_like(self.effort_limits, device=self.sim.device)
+        self.UB_joint_ids, _        = self.robot.find_joints([".*shoulder.*", ".*elbow.*"])
+        self.LB_joint_dof_ids, _    = self.robot.find_joints([".*waist.*", ".*thigh.*", ".*knee.*", ".*ankle.*"])
 
         # Body
-        self._body_ids, self.body_names = self.robot.find_bodies(".*") 
+        self._body_ids, self.body_names = self.robot.find_bodies(".*")
 
         # Body indexes
-        name_to_idx = {name: i for i, name in enumerate(self.robot.body_names)}
-        self.pelvis_idx = name_to_idx["base_link"]
-        self.torso_idx = name_to_idx["upperbody"]
-        self.l_foot_idx = name_to_idx["left_foot"]
-        self.r_foot_idx = name_to_idx["right_foot"]
-        self.l_arm_idx = name_to_idx["left_lowerarm"]
-        self.r_arm_idx = name_to_idx["right_lowerarm"]
+        name_to_idx         = {name: i for i, name in enumerate(self.robot.body_names)}
+        self.pelvis_idx     = name_to_idx["base_link"]
+        self.torso_idx      = name_to_idx["upperbody"]
+        self.l_foot_idx     = name_to_idx["left_foot"]
+        self.r_foot_idx     = name_to_idx["right_foot"]
+        self.l_arm_idx      = name_to_idx["left_lowerarm"]
+        self.r_arm_idx      = name_to_idx["right_lowerarm"]
 
-        self.UB_link_ids, _ = self.robot.find_bodies(["upperbody", ".*upperarm", ".*lowerarm"])
-        self.UB_link_ids_tensor = torch.tensor(self.UB_link_ids, dtype=torch.long, device=self.sim.device)
+        self.UB_link_ids, _         = self.robot.find_bodies(["base_link", "upperbody", ".*upperarm", ".*lowerarm"])
+        self.UB_link_ids_tensor     = torch.tensor(self.UB_link_ids, dtype=torch.long, device=self.sim.device)
         
         ### Targets ###
         # Target vectors
-        self.targets_w = torch.tensor([0, 0, 0],dtype=torch.float32, device=self.sim.device).repeat((self.num_envs, 1))
-        self.targets_w += self.scene.env_origins
-        self.targets_quat_w = torch.tensor([1,0,0,0], dtype=torch.float32, device=self.sim.device).repeat((self.num_envs, 1))
-        self.init_targets_w = self.targets_w.clone()
+        self.targets_w          = torch.tensor([0, 0, 0],dtype=torch.float32, device=self.sim.device).repeat((self.num_envs, 1))
+        self.targets_w          += self.scene.env_origins
+        self.targets_quat_w     = torch.tensor([1,0,0,0], dtype=torch.float32, device=self.sim.device).repeat((self.num_envs, 1))
+        self.init_targets_w     = self.targets_w.clone()
 
         # Direction vectors in torso frame
-        self.basis_heading_vec = torch.tensor([0, -1, 0], dtype=torch.float32, device=self.sim.device).repeat((self.num_envs, 1))
-        self.basis_up_vec = torch.tensor([0, 0, 1], dtype=torch.float32, device=self.sim.device).repeat((self.num_envs, 1))
-        self.basis_side_vec = torch.tensor([1, 0, 0], dtype=torch.float32, device=self.sim.device).repeat((self.num_envs, 1))
+        self.basis_heading_vec  = torch.tensor([1, 0, 0], dtype=torch.float32, device=self.sim.device).repeat((self.num_envs, 1))
+        self.basis_up_vec       = torch.tensor([0, 0, 1], dtype=torch.float32, device=self.sim.device).repeat((self.num_envs, 1))
+        self.basis_side_vec     = torch.tensor([0, 1, 0], dtype=torch.float32, device=self.sim.device).repeat((self.num_envs, 1))
         
         ### Gait control ###
-        # z offset
-        torso_pos_w = self.robot.data.body_pos_w[:, self.torso_idx]
-        l_foot_pos_w = self.robot.data.body_pos_w[:, self.l_foot_idx]
-        r_foot_pos_w = self.robot.data.body_pos_w[:, self.r_foot_idx]
-        self.foot_z_offset = torso_pos_w[:, 2] - 0.5 * (l_foot_pos_w[:, 2] + r_foot_pos_w[:, 2])
+        # *** Important ***
+        # all the position_w is represented based on it's env_origins
+        # the envs are not having it's own world coordinates
 
-        # time step for gait phase
+        # Initial offset
+        torso_pos_w     = self.robot.data.body_pos_w[:, self.torso_idx] # env_origin_x, env_origin_y, # z: 1.0971
+        l_foot_pos_w    = self.robot.data.body_pos_w[:, self.l_foot_idx]   # z: 0.12206
+        r_foot_pos_w    = self.robot.data.body_pos_w[:, self.r_foot_idx]   # z: 0.12178
+        self.foot_z_offset = 0.5 * (l_foot_pos_w[:, 2] + r_foot_pos_w[:, 2]) - torso_pos_w[:, 2] # z: -0.9751 # torso based
+
+        # Time step for gait phase
         self.gait_time_step = torch.zeros(self.num_envs, dtype=torch.int32, device=self.sim.device)
         
-        # target forward velocity
+        # Target forward velocity
         self.target_vel = 1.0 # m/s
         
-        # speed ratio
-        v_ref = 1.0
-        speed_ratio = max(min(self.target_vel / v_ref, 1.0), 0.0)
-
-        # stride frequency [Hz] : one full cycle for one step
-        f_stride_min = 0.8
-        f_stride_max = 1.2
-        self.f_stride = f_stride_min + (f_stride_max - f_stride_min) * speed_ratio
-
-        # step length [m] : one foot step distance
-        # step_length_min = 0.12
-        # step_length_max = 0.28
-        # self.step_length = step_length_min + (step_length_max - step_length_min) * speed_ratio
-        self.step_length = v_ref / self.f_stride
-        self.step_length /= 2.0
-
-        # gait period [time steps / stride]
-        self.period = max(10, int(round(1.0 / (self.f_stride * self.rl_dt))))
+        # Gait properties
+        import numpy as np
+        height  = 1.78 # m
+        L_leg   = 0.53 * height # m
+        g       = 9.81 # m/s^2
+        v       = self.target_vel
+        Fr      = v**2 / (g * L_leg) # Froude number
+        f_hat   = 0.55 + 0.25 * Fr
+        f       = f_hat * np.sqrt(g / L_leg) # step freqeuncy
+        
+        min_step            = 0.3 * L_leg
+        max_step            = 1.1 * L_leg
+        self.step_length    = np.clip(v / f, min_step, max_step) # foot step length
+        self.period         = max(10, int(round(2.0 / (f * self.rl_dt)))) # Gait period (time steps per stride)
 
         # Potentials
-        self.potentials = torch.zeros(self.num_envs, dtype=torch.float32, device=self.sim.device)
-        self.prev_potentials = torch.zeros_like(self.potentials)
+        self.potentials         = torch.zeros(self.num_envs, dtype=torch.float32, device=self.sim.device)
+        self.prev_potentials    = torch.zeros_like(self.potentials)
         
         ### Dynamics ###
         # Link mass
-        self.mass = self.robot.root_physx_view.get_masses().to(self.sim.device)
+        self.mass   = self.robot.root_physx_view.get_masses().to(self.sim.device)
 
         ### Others ###
-        self.termination_height: float = 0.8
-        self.joint_vel_scale: float = 0.1
+        self.termination_height: float  = 0.8
+        self.joint_vel_scale: float     = 0.1
 
         ### Logs ###
-        self.log_path = "/tmp/reward_log.csv"
+        self.log_path   = "/tmp/reward_log.csv"
 
         if not os.path.exists(self.log_path):
             with open(self.log_path, "w") as f:
@@ -382,9 +382,9 @@ class HumanbodyEnv(DirectRLEnv):
         # robot
         self.robot = Articulation(self.cfg.robot)
         # ground plane
-        self.cfg.terrain.num_envs = self.scene.cfg.num_envs
-        self.cfg.terrain.env_spacing = self.scene.cfg.env_spacing
-        self.terrain = self.cfg.terrain.class_type(self.cfg.terrain)
+        self.cfg.terrain.num_envs       = self.scene.cfg.num_envs
+        self.cfg.terrain.env_spacing    = self.scene.cfg.env_spacing
+        self.terrain                    = self.cfg.terrain.class_type(self.cfg.terrain)
         # clone and replicate
         self.scene.clone_environments(copy_from_source=False)
         # explicitly filter collisions for CPU simulation
@@ -405,10 +405,10 @@ class HumanbodyEnv(DirectRLEnv):
 
     def update_target(self):
         # Update target point [world frame]
-        self.targets_w[:, 0] += self.target_vel * self.rl_dt
+        self.targets_w[:, 0]        += self.target_vel * self.rl_dt
         # Relative position to torso position
-        self.targets_rel_w = self.targets_w - self.body_pos_w[:, self.torso_idx]
-        self.targets_rel_w[:, 2] = 0 # ignore height
+        self.targets_rel_w          = self.targets_w - self.body_pos_w[:, self.torso_idx]
+        self.targets_rel_w[:, 2]    = 0 # ignore height
 
 
     def update_marker(self):
@@ -458,18 +458,18 @@ class HumanbodyEnv(DirectRLEnv):
 
     def _compute_intermediate_values(self):
         # Joint data
-        self.joint_pos = self.robot.data.joint_pos
-        self.joint_vel = self.robot.data.joint_vel
-        self.joint_vel_scaled = self.joint_vel * self.joint_vel_scale
+        self.joint_pos          = self.robot.data.joint_pos
+        self.joint_vel          = self.robot.data.joint_vel
+        self.joint_vel_scaled   = self.joint_vel * self.joint_vel_scale
         
         # Bodies data
-        self.body_pos_w = self.robot.data.body_pos_w
-        self.body_quat_w = self.robot.data.body_quat_w
-        self.body_lin_vel_w = self.robot.data.body_lin_vel_w
-        self.body_ang_vel_w = self.robot.data.body_ang_vel_w
+        self.body_pos_w         = self.robot.data.body_pos_w
+        self.body_quat_w        = self.robot.data.body_quat_w
+        self.body_lin_vel_w     = self.robot.data.body_lin_vel_w
+        self.body_ang_vel_w     = self.robot.data.body_ang_vel_w
 
         # COM
-        self.com_parts_w = self.robot.data.body_com_pos_w
+        self.com_parts_w        = self.robot.data.body_com_pos_w
 
         (
             self.joint_pos_scaled,
@@ -543,7 +543,7 @@ class HumanbodyEnv(DirectRLEnv):
                 self.joint_vel_scaled[:, self.LB_joint_dof_ids], # n actions
                 self.actions, # n actions
                 self.pelv_heading_proj.unsqueeze(-1), # 1
-                self.pelv_up_proj.unsqueeze(-1), # 1 
+                self.pelv_up_proj.unsqueeze(-1), # 1
                 self.body_quat_w[:,self.pelvis_idx], # 4
                 self.phase.unsqueeze(-1), # 1
                 self.targets_rel_w, # 3
@@ -667,19 +667,20 @@ def compute_intermediate_values(
     torso_pos_w = body_pos_w[:, torso_idx]
     torso_quat_w = body_quat_w[:, torso_idx]
 
+    # Torso canonical frame
+    torso_quat_can = quat_mul(inv_start_rot, torso_quat_w) 
+
     # To target [world frame]
     to_target = targets_w - torso_pos_w
     to_target[:, 2] = 0.0
     to_target_dir = normalize(to_target)
     
     # Direction vectors  [world frame]
-    torso_heading_vec_w = quat_rotate(torso_quat_w, basis_heading_vec) # rotate basis heading vector
-    torso_up_vec_w = quat_rotate(torso_quat_w, basis_up_vec) # rotate basis up vector
-    
     # Heading alignment with target direciton
+    torso_heading_vec_w = quat_rotate(torso_quat_can, basis_heading_vec) # rotate basis heading vector
     torso_heading_proj = torch.sum(torso_heading_vec_w * to_target_dir, dim=-1)
-    
     # Up projection in world z-direction
+    torso_up_vec_w = quat_rotate(torso_quat_can, basis_up_vec) # rotate basis up vector
     torso_up_proj = torso_up_vec_w[:, 2]
     
     # Roll, Pitch, Yaw
@@ -697,25 +698,25 @@ def compute_intermediate_values(
     pelv_pos_w = body_pos_w[:, pelvis_ids]
     pelv_quat_w = body_quat_w[:, pelvis_ids]
 
-    # Direction vectors  [world frame]
-    pelv_heading_vec_w = quat_rotate(pelv_quat_w, basis_heading_vec) # rotate basis heading vector
-    pelv_up_vec_w = quat_rotate(pelv_quat_w, basis_up_vec) # rotate basis up vector
-
-    # Heading alignment with target direciton
-    pelv_heading_proj = torch.sum(pelv_heading_vec_w * to_target_dir, dim=-1)
-    
-    # Up projection in world z-direction
-    pelv_up_proj = pelv_up_vec_w[:, 2]
-
-    ### FOOT CALCULATION ###
     # Pelvis canonical frame
     pelv_quat_can = quat_mul(inv_start_rot, pelv_quat_w)
 
+    # Direction vectors  [world frame]
+    pelv_heading_vec_w = quat_rotate(pelv_quat_can, basis_heading_vec) # rotate basis heading vector
+    pelv_heading_proj = torch.sum(pelv_heading_vec_w * to_target_dir, dim=-1)
+    pelv_up_vec_w = quat_rotate(pelv_quat_can, basis_up_vec) # rotate basis up vector
+    pelv_up_proj = pelv_up_vec_w[:, 2]
+
+    ### FOOT CALCULATION ###
     # Foot data [world frame]
     l_foot_pos_w = body_pos_w[:, l_foot_idx]
     l_foot_quat_w = body_quat_w[:, l_foot_idx]
     r_foot_pos_w = body_pos_w[:, r_foot_idx]
     r_foot_quat_w = body_quat_w[:, r_foot_idx]
+
+    # Foot canonical frame
+    l_foot_quat_can = quat_mul(inv_start_rot, l_foot_quat_w)
+    r_foot_quat_can = quat_mul(inv_start_rot, r_foot_quat_w)
 
     # Foot positions [pelvis canonial frame]
     l_foot_rel_pos_w = l_foot_pos_w - pelv_pos_w
@@ -724,8 +725,8 @@ def compute_intermediate_values(
     r_foot_rel_pos_pelv = quat_rotate_inverse(pelv_quat_can, r_foot_rel_pos_w)
 
     # Foot directions [world frame]
-    l_foot_side_vec_w = quat_rotate(l_foot_quat_w, basis_side_vec)
-    r_foot_side_vec_w = quat_rotate(r_foot_quat_w, basis_side_vec)
+    l_foot_side_vec_w = quat_rotate(l_foot_quat_can, basis_side_vec)
+    r_foot_side_vec_w = quat_rotate(r_foot_quat_can, basis_side_vec)
 
     # Foot vectors projection
     pelv_side_vec_w = quat_rotate(pelv_quat_w, basis_side_vec)
@@ -741,10 +742,10 @@ def compute_intermediate_values(
     right_stance_mask = ~right_swing_mask
 
     # Stance position
-    foot_y_offset = 0.1
-    step_height = 0.05 # 15?
+    foot_y_offset = 0.10
+    step_height = 0.10 # 15?
     stance_x = 0.0
-    stance_z = foot_z_offset + 0.01 + step_height / 2
+    stance_z = foot_z_offset + step_height / 2
 
     # Desired trajectories
     l_foot_target_pelv = torch.zeros_like(l_foot_rel_pos_pelv)
@@ -764,8 +765,8 @@ def compute_intermediate_values(
     # Z direction
     l_foot_target_pelv[:, 2] = stance_z + step_height * torch.sin(phase) * left_swing_mask.float()
     r_foot_target_pelv[:, 2] = stance_z - step_height * torch.sin(phase) * right_swing_mask.float()
-    l_foot_target_pelv[left_stance_mask, 2] = l_foot_rel_pos_pelv[left_stance_mask, 2] - 0.01
-    r_foot_target_pelv[right_stance_mask, 2] = r_foot_rel_pos_pelv[right_stance_mask, 2] - 0.01
+    l_foot_target_pelv[left_stance_mask, 2] = l_foot_rel_pos_pelv[left_stance_mask, 2] - 0.005
+    r_foot_target_pelv[right_stance_mask, 2] = r_foot_rel_pos_pelv[right_stance_mask, 2] - 0.005
 
 
     ### COM CONTROL ###
@@ -780,7 +781,7 @@ def compute_intermediate_values(
     com_w = weighted_pos.sum(dim=1) / mass_ub.sum(dim=1)
     com_rel = com_w - pelv_pos_w
     # COM target
-    com_x_target = 0.03
+    com_x_target = 0.08
     com_x_error = com_rel[:, 0] - com_x_target
     # com_y_target = (l_foot_rel_pos_pelv[left_stance_mask, 1] + r_foot_rel_pos_pelv[right_stance_mask, 1])/2
     # com_y_target = torch.where(
@@ -849,25 +850,25 @@ def compute_rewards(
 ):
     # weights
     weight_joint_limit = 0.15
-    weight_action      = 0.005
-    weight_energy      = 0.003
-    weight_pelv_vel_x  = 1.2
+    weight_action      = 0.0
+    weight_energy      = 0.0
+    weight_pelv_vel_x  = 0.1
     weight_yaw         = 0.2
-    weight_torso_head  = 0.35
-    weight_torso_up    = 0.45
-    weight_pelv_head   = 0.35
-    weight_pelv_up     = 0.45
-    weight_lfoot_side  = 0.10
-    weight_rfoot_side  = 0.10
-    weight_lfoot_x     = 0.25
-    weight_lfoot_y     = 0.10
-    weight_lfoot_z     = 0.20
-    weight_rfoot_x     = 0.25
-    weight_rfoot_y     = 0.10
-    weight_rfoot_z     = 0.20
+    weight_torso_head  = 0.4
+    weight_torso_up    = 0.5
+    weight_pelv_head   = 0.4
+    weight_pelv_up     = 0.5
+    weight_lfoot_side  = 0.0
+    weight_rfoot_side  = 0.0
+    weight_lfoot_x     = 0.4
+    weight_lfoot_y     = 0.2
+    weight_lfoot_z     = 0.4
+    weight_rfoot_x     = 0.4
+    weight_rfoot_y     = 0.2
+    weight_rfoot_z     = 0.4
     weight_alive       = 0.05
-    weight_progress    = 0.6
-    weight_com         = 0.20
+    weight_progress    = 0.05
+    weight_com         = 0.3
     weight_L           = 1e-5
     weight_death       = 5.0
 
