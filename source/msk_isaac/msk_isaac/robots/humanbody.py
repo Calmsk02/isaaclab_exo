@@ -61,91 +61,91 @@ HUMANBODY_CFG = ArticulationCfg(
             effort_limit_sim=300.0,
             velocity_limit_sim=10.0,
             stiffness=0.0,
-            damping=0.0,
+            damping=0.3,
         ),
         "waist_roll": ImplicitActuatorCfg(
             joint_names_expr=["waist_roll"],
             effort_limit_sim=250.0,
             velocity_limit_sim=10.0,
             stiffness=0.0,
-            damping=0.0,
+            damping=0.3,
         ),
         "waist_yaw": ImplicitActuatorCfg(
             joint_names_expr=["waist_yaw"],
             effort_limit_sim=60.0,
             velocity_limit_sim=10.0,
             stiffness=0.0,
-            damping=0.0,
+            damping=0.3,
         ),
         "shoulder_pitch": ImplicitActuatorCfg(
             joint_names_expr=[".*_shoulder_pitch"],
             effort_limit_sim=40.0,
             velocity_limit_sim=10.0,
             stiffness=0.0,
-            damping=0.0,
+            damping=0.3,
         ),
         "shoulder_roll": ImplicitActuatorCfg(
             joint_names_expr=[".*_shoulder_roll"],
             effort_limit_sim=35.0,
             velocity_limit_sim=10.0,
             stiffness=0.0,
-            damping=0.0,
+            damping=0.3,
         ),
         "shoulder_yaw": ImplicitActuatorCfg(
             joint_names_expr=[".*_shoulder_yaw"],
             effort_limit_sim=30.0,
             velocity_limit_sim=10.0,
             stiffness=0.0,
-            damping=0.0,
+            damping=0.3,
         ),
         "elbow_pitch": ImplicitActuatorCfg(
             joint_names_expr=[".*_elbow_pitch"],
             effort_limit_sim=45.0,
             velocity_limit_sim=10.0,
             stiffness=0.0,
-            damping=0.0,
+            damping=0.3,
         ),
         "thigh_pitch": ImplicitActuatorCfg(
             joint_names_expr=[".*_thigh_pitch"],
             effort_limit_sim=150.0,
             velocity_limit_sim=10.0,
             stiffness=0.0,
-            damping=0.0,
+            damping=0.3,
         ),
         "thigh_roll": ImplicitActuatorCfg(
             joint_names_expr=[".*_thigh_roll"],
             effort_limit_sim=100.0,
             velocity_limit_sim=10.0,
             stiffness=0.0,
-            damping=0.0,
+            damping=0.3,
         ),
         "thigh_yaw": ImplicitActuatorCfg(
             joint_names_expr=[".*_thigh_yaw"],
             effort_limit_sim=70.0,
             velocity_limit_sim=10.0,
             stiffness=0.0,
-            damping=0.0,
+            damping=0.3,
         ),
         "knee_pitch": ImplicitActuatorCfg(
             joint_names_expr=[".*_knee_pitch"],
             effort_limit_sim=150.0,
             velocity_limit_sim=10.0,
             stiffness=0.0,
-            damping=0.0,
+            damping=0.3,
         ),
         "ankle_pitch": ImplicitActuatorCfg(
             joint_names_expr=[".*_ankle_pitch"],
             effort_limit_sim=100.0,
             velocity_limit_sim=10.0,
             stiffness=0.0,
-            damping=0.0,
+            damping=0.3,
         ),
         "ankle_roll": ImplicitActuatorCfg(
             joint_names_expr=[".*_ankle_roll"],
             effort_limit_sim=60.0,
             velocity_limit_sim=10.0,
             stiffness=0.0,
-            damping=0.0,
+            damping=0.3,
         ),
     },
 )
@@ -157,10 +157,10 @@ HUMANBODY_CFG = ArticulationCfg(
 class HumanbodyEnvCfg(DirectRLEnvCfg):
     # required
     decimation = 1
-    episode_length_s = 10.0
+    episode_length_s = 20.0
     action_space = 15
     num_dofs = 23
-    observation_space = 10 + 3 * action_space
+    observation_space = 12 + 2 * action_space
     state_space = 0
 
     # simulation
@@ -175,7 +175,7 @@ class HumanbodyEnvCfg(DirectRLEnvCfg):
             friction_combine_mode="average",
             restitution_combine_mode="average",
             static_friction=1.0,
-            dynamic_friction=0.8,
+            dynamic_friction=1.0,
             restitution=0.0,
         ),
         debug_vis=False,
@@ -183,11 +183,14 @@ class HumanbodyEnvCfg(DirectRLEnvCfg):
 
     # scene
     scene: InteractiveSceneCfg = InteractiveSceneCfg(
-        num_envs=500, env_spacing=15.0, replicate_physics=False, clone_in_fabric=False
+        num_envs=500, env_spacing=5.0, replicate_physics=False, clone_in_fabric=False
     )
 
     # robot
-    robot: ArticulationCfg = HUMANBODY_CFG.replace(prim_path="/World/envs/env_.*/Robot")
+    robot: ArticulationCfg = HUMANBODY_CFG.replace(
+        prim_path="/World/envs/env_.*/Robot",
+        collision_group=-1,
+        )
 
 
 ####################
@@ -236,53 +239,52 @@ class HumanbodyEnv(DirectRLEnv):
         self.UB_link_ids, _         = self.robot.find_bodies(["base_link", "upperbody", ".*upperarm", ".*lowerarm"])
         self.UB_link_ids_tensor     = torch.tensor(self.UB_link_ids, dtype=torch.long, device=self.sim.device)
         
-        ### Targets ###
-        # Target vectors
-        self.targets_w          = torch.tensor([0, 0, 0],dtype=torch.float32, device=self.sim.device).repeat((self.num_envs, 1))
-        self.targets_w          += self.scene.env_origins
-        self.targets_quat_w     = torch.tensor([1,0,0,0], dtype=torch.float32, device=self.sim.device).repeat((self.num_envs, 1))
-        self.init_targets_w     = self.targets_w.clone()
-
-        # Direction vectors in torso frame
-        self.basis_heading_vec  = torch.tensor([1, 0, 0], dtype=torch.float32, device=self.sim.device).repeat((self.num_envs, 1))
-        self.basis_up_vec       = torch.tensor([0, 0, 1], dtype=torch.float32, device=self.sim.device).repeat((self.num_envs, 1))
-        self.basis_side_vec     = torch.tensor([0, 1, 0], dtype=torch.float32, device=self.sim.device).repeat((self.num_envs, 1))
-        
         ### Gait control ###
         # *** Important ***
         # all the position_w is represented based on it's env_origins
         # the envs are not having it's own world coordinates
 
         # Initial offset
-        torso_pos_w     = self.robot.data.body_pos_w[:, self.torso_idx] # env_origin_x, env_origin_y, # z: 1.0971
+        pelv_pos_w      = self.robot.data.body_pos_w[:, self.pelvis_idx] # env_origin_x, env_origin_y, # z: 1.0971
+        pelv_quat_w     = self.robot.data.body_quat_w[:, self.pelvis_idx]
         l_foot_pos_w    = self.robot.data.body_pos_w[:, self.l_foot_idx]   # z: 0.12206
         r_foot_pos_w    = self.robot.data.body_pos_w[:, self.r_foot_idx]   # z: 0.12178
-        self.foot_z_offset = 0.5 * (l_foot_pos_w[:, 2] + r_foot_pos_w[:, 2]) - torso_pos_w[:, 2] # z: -0.9751 # torso based
+        self.foot_z_offset = 0.5 * (l_foot_pos_w[:, 2] + r_foot_pos_w[:, 2]) - pelv_pos_w[:, 2] # z: -0.9751 # torso based
 
         # Time step for gait phase
         self.gait_time_step = torch.zeros(self.num_envs, dtype=torch.int32, device=self.sim.device)
         
-        # Target forward velocity
-        self.target_vel = 1.0 # m/s
+        # Target commands
+        # x_vel, y_vel, z_step, yaw_vel
+        self.target_cmd = torch.zeros((self.num_envs, 4), dtype=torch.float32, device=self.sim.device)
+        self.target_cmd[:, 0] = 1.0
         
-        # Gait properties
-        import numpy as np
+        # Forward Gait properties
         height  = 1.78 # m
         L_leg   = 0.53 * height # m
         g       = 9.81 # m/s^2
-        v       = self.target_vel
-        Fr      = v**2 / (g * L_leg) # Froude number
-        f_hat   = 0.55 + 0.25 * Fr
-        f       = f_hat * np.sqrt(g / L_leg) # step freqeuncy
-        
-        min_step            = 0.3 * L_leg
-        max_step            = 1.1 * L_leg
-        self.step_length    = np.clip(v / f, min_step, max_step) # foot step length
-        self.period         = max(10, int(round(2.0 / (f * self.rl_dt)))) # Gait period (time steps per stride)
+        v = 1.0
+        Fr = v**2 / (g * L_leg)
+        f_hat = 0.55 + 0.25 * Fr
+        f = f_hat * math.sqrt(g / L_leg)
 
-        # Potentials
-        self.potentials         = torch.zeros(self.num_envs, dtype=torch.float32, device=self.sim.device)
-        self.prev_potentials    = torch.zeros_like(self.potentials)
+        min_stride = 0.3 * L_leg
+        max_stride = 1.1 * L_leg
+
+        self.stride_length = float(round(max(min(v / f, max_stride), min_stride), 2))
+        self.step_length = self.stride_length / 2.0
+        self.period = max(10, int(round(2.0 / (f * self.rl_dt))))
+
+        ### Targets ###
+        # Target vectors
+        self.target_pos_w       = pelv_pos_w.clone()
+        self.target_quat_w      = quat_mul(self.inv_start_rot, pelv_quat_w)
+        self.init_target_pos_w  = self.target_pos_w.clone()
+
+        # Direction vectors in torso frame
+        self.basis_heading_vec  = torch.tensor([1, 0, 0], dtype=torch.float32, device=self.sim.device).repeat((self.num_envs, 1))
+        self.basis_up_vec       = torch.tensor([0, 0, 1], dtype=torch.float32, device=self.sim.device).repeat((self.num_envs, 1))
+        self.basis_side_vec     = torch.tensor([0, 1, 0], dtype=torch.float32, device=self.sim.device).repeat((self.num_envs, 1))
         
         ### Dynamics ###
         # Link mass
@@ -299,23 +301,40 @@ class HumanbodyEnv(DirectRLEnv):
             with open(self.log_path, "w") as f:
                 f.write(
                     "step,"
-                    "p_joint_limits,p_actions,p_energy,"
-                    "r_pelv_vel_x,r_yaw,"
-                    "r_torso_head,r_torso_up,"
-                    "r_pelv_head,r_pelv_up,"
-                    "r_lfoot_side,r_rfoot_side,"
-                    "r_lfoot_x,r_lfoot_y,r_lfoot_z,"
-                    "r_rfoot_x,r_rfoot_y,r_rfoot_z,"
-                    "r_alive,r_progress,"
+                    "p_joint_limits,"
+                    "p_actions,"
+                    "p_energy,"
+                    "r_yaw,"
+                    "r_torso_head,"
+                    "r_torso_up,"
+                    "r_pelv_head,"
+                    "r_pelv_up,"
+                    "r_lfoot_side,"
+                    "r_rfoot_side,"
+                    "r_lfoot_x,"
+                    "r_lfoot_y,"
+                    "r_lfoot_z,"
+                    "r_rfoot_x,"
+                    "r_rfoot_y,"
+                    "r_rfoot_z,"
+                    "r_vel_x,"
+                    "r_vel_y,"
+                    "r_vel_z,"
+                    "r_vel_az,"
                     "r_com_x,"
+                    "r_com_y,"
+                    "r_pelv_x,"
+                    "r_pelv_y,"
+                    "r_pelv_z,"
                     "p_L,"
+                    "r_alive,"
                     "total_reward\n"
                 )
-                        
+
         ### Initialization ###
         self.print_robot_info()
-        self.setup_visual_markers()
         self._compute_intermediate_values()
+        self.setup_visual_markers()
 
 
     def setup_visual_markers(self):
@@ -344,12 +363,14 @@ class HumanbodyEnv(DirectRLEnv):
         self.r_foot_marker = VisualizationMarkers(
             frame_marker_cfg.replace(prim_path=f"/Visuals/rfoot_marker")
         )
-        self.goal_marker.visualize(self.targets_w, self.targets_quat_w)
+        self.goal_marker.visualize(self.target_pos_w, self.target_quat_w)
         
         # Optional markers 
         self.markers = []
-        frame_marker_cfg.markers["frame"].scale = (0.2, 0.2, 0.2)
-        for i in range(1):
+        frame_marker_cfg.markers["frame"].scale = (0.1, 0.1, 0.1)
+        for i in range(3):
+            if i == 0:
+                frame_marker_cfg.markers["frame"].scale = (0.2, 0.2, 0.2)
             new_marker = VisualizationMarkers(
                 frame_marker_cfg.replace(prim_path=f"/Visuals/extra_marker_{i}")
             )
@@ -405,45 +426,47 @@ class HumanbodyEnv(DirectRLEnv):
 
     def update_target(self):
         # Update target point [world frame]
-        self.targets_w[:, 0]        += self.target_vel * self.rl_dt
-        # Relative position to torso position
-        self.targets_rel_w          = self.targets_w - self.body_pos_w[:, self.torso_idx]
-        self.targets_rel_w[:, 2]    = 0 # ignore height
+        self.target_pos_w[:, 0] += self.target_cmd[:, 0] * self.rl_dt
+        self.target_pos_w[:, 1] += self.target_cmd[:, 1] * self.rl_dt
+        self.target_pos_w[:, 2] += self.target_cmd[:, 2] * self.rl_dt
 
 
     def update_marker(self):
+        pelv_pos_w = self.body_pos_w[:, self.pelvis_idx]
+        pelv_quat_can = quat_mul(self.inv_start_rot, self.body_quat_w[:, self.pelvis_idx])
         self.base_marker.visualize(
-            self.body_pos_w[:, self.pelvis_idx], 
-            self.body_quat_w[:, self.pelvis_idx]
+            pelv_pos_w, 
+            pelv_quat_can
         )
         self.up_body_marker.visualize(
             self.body_pos_w[:, self.torso_idx],
-            self.body_quat_w[:, self.torso_idx]
+            quat_mul(self.inv_start_rot, self.body_quat_w[:, self.torso_idx])
         )
         self.l_foot_marker.visualize(
             self.body_pos_w[:, self.l_foot_idx],
-            self.body_quat_w[:, self.l_foot_idx]
+            quat_mul(self.inv_start_rot, self.body_quat_w[:, self.l_foot_idx])
         )
         self.r_foot_marker.visualize(
             self.body_pos_w[:, self.r_foot_idx],
-            self.body_quat_w[:, self.r_foot_idx]
+            quat_mul(self.inv_start_rot, self.body_quat_w[:, self.r_foot_idx])
         )
         self.l_arm_marker.visualize(
             self.body_pos_w[:, self.l_arm_idx],
-            self.body_quat_w[:, self.l_arm_idx]
+            quat_mul(self.inv_start_rot, self.body_quat_w[:, self.l_arm_idx])
         )
         self.r_arm_marker.visualize(
             self.body_pos_w[:, self.r_arm_idx],
-            self.body_quat_w[:, self.r_arm_idx]
+            quat_mul(self.inv_start_rot, self.body_quat_w[:, self.r_arm_idx])
         )
-        self.goal_marker.visualize(
-            self.targets_w,
-            self.targets_quat_w
-        )
-        self.markers[0].visualize(
-            self.com_w,
-            self.targets_quat_w
-        )
+        
+        self.goal_marker.visualize(self.target_pos_w, self.target_quat_w)
+        
+        self.markers[0].visualize(self.com_w, self.target_quat_w)
+
+        l_foot_target_pos_w = self.l_foot_target_pelv + pelv_pos_w
+        r_foot_target_pos_w = self.r_foot_target_pelv + pelv_pos_w
+        self.markers[1].visualize(l_foot_target_pos_w, self.target_quat_w)
+        self.markers[2].visualize(r_foot_target_pos_w, self.target_quat_w)
 
 
     def _apply_action(self):
@@ -476,27 +499,27 @@ class HumanbodyEnv(DirectRLEnv):
             self.torso_heading_proj,
             self.torso_up_proj,
             self.yaw_error,
+            self.pelv_pos_error,
             self.pelv_heading_proj,
             self.pelv_up_proj,
             self.l_foot_side_proj,
             self.r_foot_side_proj,
             self.phase,
+            self.l_foot_pos_error,
+            self.r_foot_pos_error,
             self.l_foot_target_pelv,
             self.r_foot_target_pelv,
-            self.l_foot_rel_pos_pelv,
-            self.r_foot_rel_pos_pelv,
+            self.vel_error,
             self.com_w,
-            self.com_x_error,
-            self.com_y_error,
-            self.prev_potentials,
-            self.potentials,
-            self.L,
+            self.com_error,
+            self.L
+
         ) = compute_intermediate_values(
             # joint control
             self.joint_pos,
             self.joint_limits_lower,
             self.joint_limits_upper,
-            # bodies control
+            # body control
             self.inv_start_rot,
             self.body_pos_w,
             self.body_quat_w,
@@ -511,19 +534,17 @@ class HumanbodyEnv(DirectRLEnv):
             self.mass,
             self.com_parts_w,
             # targets
-            self.targets_w,
+            self.target_cmd,
+            self.target_pos_w,
             self.basis_heading_vec,
             self.basis_up_vec,
             self.basis_side_vec,
-            self.potentials,
-            self.prev_potentials,
             # foot steps
             self.gait_time_step,
             self.period,
             self.step_length,
             self.foot_z_offset,
             # sim timestep
-            self.rl_dt,
             self.env_time_step,
         )
 
@@ -537,16 +558,18 @@ class HumanbodyEnv(DirectRLEnv):
         self.update_target()
         self._compute_intermediate_values()
         self.update_marker()
+        sin_phase = torch.sin(self.phase)
+        cos_phase = torch.cos(self.phase)
         obs = torch.cat(
             (
                 self.joint_pos_scaled[:, self.LB_joint_dof_ids], # n actions
                 self.joint_vel_scaled[:, self.LB_joint_dof_ids], # n actions
-                self.actions, # n actions
                 self.pelv_heading_proj.unsqueeze(-1), # 1
                 self.pelv_up_proj.unsqueeze(-1), # 1
                 self.body_quat_w[:,self.pelvis_idx], # 4
-                self.phase.unsqueeze(-1), # 1
-                self.targets_rel_w, # 3
+                sin_phase.unsqueeze(-1), # 1
+                cos_phase.unsqueeze(-1), # 1
+                self.target_cmd, # 4
             ),
             dim=-1
         )
@@ -561,22 +584,17 @@ class HumanbodyEnv(DirectRLEnv):
                 self.torso_heading_proj,
                 self.torso_up_proj,
                 self.yaw_error,
+                self.pelv_pos_error,
                 self.pelv_heading_proj,
                 self.pelv_up_proj,
                 self.l_foot_side_proj,
                 self.r_foot_side_proj,
-                self.l_foot_target_pelv,
-                self.r_foot_target_pelv,
-                self.l_foot_rel_pos_pelv,
-                self.r_foot_rel_pos_pelv,
-                self.com_x_error,
-                self.com_y_error,
-                self.prev_potentials,
-                self.potentials,
-                self.target_vel,
-                self.body_lin_vel_w[:, self.pelvis_idx],
+                self.l_foot_pos_error,
+                self.r_foot_pos_error,
+                self.com_error,
+                self.vel_error,
                 self.L,
-                self.reset_terminated,
+                self.died
             )
         
         self.reward_terms = reward_terms
@@ -588,6 +606,7 @@ class HumanbodyEnv(DirectRLEnv):
     def _get_dones(self) -> tuple[torch.Tensor, torch.Tensor]:
         time_out = self.episode_length_buf >= self.max_episode_length - 1
         died = self.body_pos_w[:, self.torso_idx, 2] < self.termination_height
+        self.died = died.clone()
         return died, time_out
     
     def _reset_idx(self, env_ids: torch.Tensor | None):
@@ -606,11 +625,9 @@ class HumanbodyEnv(DirectRLEnv):
         self.robot.write_joint_state_to_sim(joint_pos, joint_vel, None, env_ids)
 
         self.actions[env_ids] = 0
-        self.targets_w[env_ids] = self.init_targets_w[env_ids]
-        self.potentials[env_ids] = 0
-        self.prev_potentials[env_ids] = 0
+        self.target_pos_w[env_ids] = self.init_target_pos_w[env_ids]
 
-        to_target = self.targets_w[env_ids] - default_root_state[:, :3]
+        to_target = self.target_pos_w[env_ids] - default_root_state[:, :3]
         to_target[:, 2] = 0.0
 
         self.env_time_step[env_ids] = 0
@@ -631,9 +648,11 @@ class HumanbodyEnv(DirectRLEnv):
 
 @torch.jit.script
 def compute_intermediate_values(
+    # joint control
     joint_pos:torch.Tensor,
     joint_limits_lower:torch.Tensor,
     joint_limits_upper:torch.Tensor,
+    # body control
     inv_start_rot:torch.Tensor,
     body_pos_w:torch.Tensor,
     body_quat_w:torch.Tensor,
@@ -644,20 +663,22 @@ def compute_intermediate_values(
     l_foot_idx:int,
     r_foot_idx:int,
     UB_link_ids_tensor:torch.Tensor,
+    # dynamics
     mass:torch.Tensor,
     com_parts_w:torch.Tensor,
-    targets_w:torch.Tensor,
+    # targets
+    target_cmd:torch.Tensor,
+    target_pos_w:torch.Tensor,
     basis_heading_vec:torch.Tensor,
     basis_up_vec:torch.Tensor,
     basis_side_vec:torch.Tensor,
-    potentials:torch.Tensor,
-    prev_potentials:torch.Tensor,
+    # foot steps
     gait_time_step:torch.Tensor,
     period:float,
     step_length:float,
     foot_z_offset:torch.Tensor,
-    rl_dt:float,
-    time_step:torch.Tensor,
+    # sim timestep
+    env_time_step:torch.Tensor,
 ):
     ### JOINT POSITION SCALE ###
     joint_pos_scaled = 2.0 * (joint_pos - joint_limits_lower) / (joint_limits_upper - joint_limits_lower) - 1.0
@@ -671,16 +692,19 @@ def compute_intermediate_values(
     torso_quat_can = quat_mul(inv_start_rot, torso_quat_w) 
 
     # To target [world frame]
-    to_target = targets_w - torso_pos_w
+    torso_pos_error_w = target_pos_w - torso_pos_w
+    to_target = torso_pos_error_w.clone()
     to_target[:, 2] = 0.0
     to_target_dir = normalize(to_target)
     
     # Direction vectors  [world frame]
     # Heading alignment with target direciton
     torso_heading_vec_w = quat_rotate(torso_quat_can, basis_heading_vec) # rotate basis heading vector
+    torso_heading_vec_w = normalize(torso_heading_vec_w)
     torso_heading_proj = torch.sum(torso_heading_vec_w * to_target_dir, dim=-1)
     # Up projection in world z-direction
     torso_up_vec_w = quat_rotate(torso_quat_can, basis_up_vec) # rotate basis up vector
+    torso_up_vec_w = normalize(torso_up_vec_w)
     torso_up_proj = torso_up_vec_w[:, 2]
     
     # Roll, Pitch, Yaw
@@ -698,14 +722,28 @@ def compute_intermediate_values(
     pelv_pos_w = body_pos_w[:, pelvis_ids]
     pelv_quat_w = body_quat_w[:, pelvis_ids]
 
+    # Pelvis position tacking
+    pelv_pos_error_w = target_pos_w - pelv_pos_w
+
     # Pelvis canonical frame
     pelv_quat_can = quat_mul(inv_start_rot, pelv_quat_w)
 
     # Direction vectors  [world frame]
     pelv_heading_vec_w = quat_rotate(pelv_quat_can, basis_heading_vec) # rotate basis heading vector
+    pelv_heading_vec_w = normalize(pelv_heading_vec_w)
     pelv_heading_proj = torch.sum(pelv_heading_vec_w * to_target_dir, dim=-1)
     pelv_up_vec_w = quat_rotate(pelv_quat_can, basis_up_vec) # rotate basis up vector
+    pelv_up_vec_w = normalize(pelv_up_vec_w)
     pelv_up_proj = pelv_up_vec_w[:, 2]
+
+    ### VELOCITY CMD ERROR ###
+    vel_error = target_cmd.clone()
+    torso_lin_vel_can = quat_rotate_inverse(torso_quat_can, body_lin_vel_w[:, torso_idx])
+    torso_ang_vel_w = body_ang_vel_w[:, torso_idx]
+    vel_error[:, 0] = target_cmd[:, 0] - torso_lin_vel_can[:, 0]
+    vel_error[:, 1] = target_cmd[:, 1] - torso_lin_vel_can[:, 1]
+    vel_error[:, 2] = target_cmd[:, 2] - torso_lin_vel_can[:, 2]
+    vel_error[:, 3] = target_cmd[:, 3] - torso_ang_vel_w[:, 2]
 
     ### FOOT CALCULATION ###
     # Foot data [world frame]
@@ -717,21 +755,24 @@ def compute_intermediate_values(
     # Foot canonical frame
     l_foot_quat_can = quat_mul(inv_start_rot, l_foot_quat_w)
     r_foot_quat_can = quat_mul(inv_start_rot, r_foot_quat_w)
+    
+    # Foot directions [world frame]
+    l_foot_side_vec_w = quat_rotate(l_foot_quat_can, basis_side_vec)
+    l_foot_side_vec_w = normalize(l_foot_side_vec_w)
+    r_foot_side_vec_w = quat_rotate(r_foot_quat_can, basis_side_vec)
+    r_foot_side_vec_w = normalize(r_foot_side_vec_w)
+
+    # Foot vectors projection
+    pelv_side_vec_w = quat_rotate(torso_quat_can, basis_side_vec)
+    pelv_side_vec_w = normalize(pelv_side_vec_w)
+    l_foot_side_proj = torch.sum(l_foot_side_vec_w * pelv_side_vec_w, dim=-1)
+    r_foot_side_proj = torch.sum(r_foot_side_vec_w * pelv_side_vec_w, dim=-1)
 
     # Foot positions [pelvis canonial frame]
     l_foot_rel_pos_w = l_foot_pos_w - pelv_pos_w
-    l_foot_rel_pos_pelv = quat_rotate_inverse(pelv_quat_can, l_foot_rel_pos_w)
+    l_foot_rel_pos_pelv = quat_rotate_inverse(torso_quat_can, l_foot_rel_pos_w)
     r_foot_rel_pos_w = r_foot_pos_w - pelv_pos_w
-    r_foot_rel_pos_pelv = quat_rotate_inverse(pelv_quat_can, r_foot_rel_pos_w)
-
-    # Foot directions [world frame]
-    l_foot_side_vec_w = quat_rotate(l_foot_quat_can, basis_side_vec)
-    r_foot_side_vec_w = quat_rotate(r_foot_quat_can, basis_side_vec)
-
-    # Foot vectors projection
-    pelv_side_vec_w = quat_rotate(pelv_quat_w, basis_side_vec)
-    l_foot_side_proj = torch.sum(l_foot_side_vec_w * pelv_side_vec_w, dim=-1)
-    r_foot_side_proj = torch.sum(r_foot_side_vec_w * pelv_side_vec_w, dim=-1)
+    r_foot_rel_pos_pelv = quat_rotate_inverse(torso_quat_can, r_foot_rel_pos_w)
 
     ### GAIT CONTROL ###
     # Gait phase
@@ -741,23 +782,22 @@ def compute_intermediate_values(
     left_stance_mask = ~left_swing_mask
     right_stance_mask = ~right_swing_mask
 
-    # Stance position
-    foot_y_offset = 0.10
-    step_height = 0.10 # 15?
-    stance_x = 0.0
-    stance_z = foot_z_offset + step_height / 2
+    # Stance position-
+    foot_y_offset = 0.1
+    step_height = 0.15 # 15?
+    stance_z = foot_z_offset
 
     # Desired trajectories
     l_foot_target_pelv = torch.zeros_like(l_foot_rel_pos_pelv)
     r_foot_target_pelv = torch.zeros_like(r_foot_rel_pos_pelv)
 
     # X direction
-    l_foot_target_pelv[:, 0] = stance_x - step_length * torch.cos(phase)
-    r_foot_target_pelv[:, 0] = stance_x + step_length * torch.cos(phase)
-    init_mask = time_step < int(period/4) # for the first pi/2 period
-    l_foot_target_pelv[init_mask, 0] = 0
+    l_foot_target_pelv[:, 0] = - step_length * torch.cos(phase)
+    r_foot_target_pelv[:, 0] = step_length * torch.cos(phase)
+    init_mask = env_time_step < int(period/4) # for the first pi/2 period 
+    l_foot_target_pelv[init_mask, 0] = 0 
     r_foot_target_pelv[init_mask, 0] = 0
-    
+
     # Y direction
     l_foot_target_pelv[:, 1] = foot_y_offset
     r_foot_target_pelv[:, 1] = -foot_y_offset
@@ -765,9 +805,12 @@ def compute_intermediate_values(
     # Z direction
     l_foot_target_pelv[:, 2] = stance_z + step_height * torch.sin(phase) * left_swing_mask.float()
     r_foot_target_pelv[:, 2] = stance_z - step_height * torch.sin(phase) * right_swing_mask.float()
-    l_foot_target_pelv[left_stance_mask, 2] = l_foot_rel_pos_pelv[left_stance_mask, 2] - 0.005
-    r_foot_target_pelv[right_stance_mask, 2] = r_foot_rel_pos_pelv[right_stance_mask, 2] - 0.005
+    l_foot_target_pelv[left_stance_mask, 2] = foot_z_offset[left_stance_mask]
+    r_foot_target_pelv[right_stance_mask, 2] = foot_z_offset[right_stance_mask]
 
+    # Foot tracking error
+    l_foot_error = l_foot_target_pelv - l_foot_rel_pos_pelv
+    r_foot_error = r_foot_target_pelv - r_foot_rel_pos_pelv
 
     ### COM CONTROL ###
     # Calculate COM
@@ -779,22 +822,12 @@ def compute_intermediate_values(
     mass_ub = mass[:, UB_link_ids_tensor]
     weighted_pos = com_parts_w[:, UB_link_ids_tensor] * mass_ub
     com_w = weighted_pos.sum(dim=1) / mass_ub.sum(dim=1)
-    com_rel = com_w - pelv_pos_w
-    # COM target
-    com_x_target = 0.08
-    com_x_error = com_rel[:, 0] - com_x_target
-    # com_y_target = (l_foot_rel_pos_pelv[left_stance_mask, 1] + r_foot_rel_pos_pelv[right_stance_mask, 1])/2
-    # com_y_target = torch.where(
-    #     left_stance_mask,
-    #     l_foot_rel_pos_pelv[:, 1],
-    #     r_foot_rel_pos_pelv[:, 1]
-    # )
-    com_y_target = 0.0
-    com_y_error = com_rel[:, 1] - com_y_target
-
-    ### POTENTIAL TO TARGET ### 
-    prev_potentials[:] = potentials
-    potentials = -torch.norm(to_target, p=2, dim=-1) / rl_dt
+    target_com_x_w = pelv_pos_w[:, 0] - 0.10
+    target_com_y_w = pelv_pos_w[:, 1]
+    com_error_w = torch.zeros_like(com_w)
+    com_error_w[:, 0] = target_com_x_w - com_w[:, 0]
+    com_error_w[:, 1] = target_com_y_w - com_w[:, 1]
+    com_error_w[:, 2] = 0.0
 
     ### ANGULAR MOMENTUM (Simple) ###
     r = body_pos_w - com_w.unsqueeze(1)
@@ -806,21 +839,20 @@ def compute_intermediate_values(
         torso_heading_proj,
         torso_up_proj,
         yaw_error,
+        pelv_pos_error_w,
         pelv_heading_proj,
         pelv_up_proj,
         l_foot_side_proj,
         r_foot_side_proj,
         phase,
+        l_foot_error,
+        r_foot_error,
         l_foot_target_pelv,
         r_foot_target_pelv,
-        l_foot_rel_pos_pelv,
-        r_foot_rel_pos_pelv,
+        vel_error,
         com_w,
-        com_x_error,
-        com_y_error,
-        prev_potentials,
-        potentials,
-        L,
+        com_error_w,
+        L
     )
 
 @torch.jit.script
@@ -831,145 +863,212 @@ def compute_rewards(
     torso_heading_proj:torch.Tensor,
     torso_up_proj:torch.Tensor,
     yaw_error:torch.Tensor,
+    pelv_pos_error:torch.Tensor,
     pelv_heading_proj:torch.Tensor,
     pelv_up_proj:torch.Tensor,
     l_foot_side_proj:torch.Tensor,
     r_foot_side_proj:torch.Tensor,
-    l_foot_target_pelv:torch.Tensor,
-    r_foot_target_pelv:torch.Tensor,
-    l_foot_rel_pos_pelv:torch.Tensor,
-    r_foot_rel_pos_pelv:torch.Tensor,
-    com_x_error:torch.Tensor,
-    com_y_error:torch.Tensor,
-    prev_potentials:torch.Tensor,
-    potentials:torch.Tensor,
-    target_vel:float,
-    pelv_lin_vel_w:torch.Tensor,
+    l_foot_pos_error:torch.Tensor,
+    r_foot_pos_error:torch.Tensor,
+    com_error:torch.Tensor,
+    vel_error:torch.Tensor,
     L:torch.Tensor,
-    reset_terminated:torch.Tensor,
+    died:torch.Tensor,
 ):
+    # --------------------
     # weights
-    weight_joint_limit = 0.15
-    weight_action      = 0.0
-    weight_energy      = 0.0
-    weight_pelv_vel_x  = 0.1
-    weight_yaw         = 0.2
-    weight_torso_head  = 0.4
-    weight_torso_up    = 0.5
-    weight_pelv_head   = 0.4
-    weight_pelv_up     = 0.5
-    weight_lfoot_side  = 0.0
-    weight_rfoot_side  = 0.0
-    weight_lfoot_x     = 0.4
-    weight_lfoot_y     = 0.2
-    weight_lfoot_z     = 0.4
-    weight_rfoot_x     = 0.4
-    weight_rfoot_y     = 0.2
-    weight_rfoot_z     = 0.4
-    weight_alive       = 0.05
-    weight_progress    = 0.05
-    weight_com         = 0.3
-    weight_L           = 1e-5
+    # --------------------
+    weight_joint_limit = 0.6
+    weight_action      = 5e-3
+    weight_energy      = 5e-3
+
+    weight_yaw         = 0.6
+    weight_torso_head  = 0.6
+    weight_torso_up    = 0.8
+    weight_pelv_head   = 0.3
+    weight_pelv_up     = 0.3
+
+    weight_foot_side   = 0.4
+    weight_foot_x      = 1.0
+    weight_foot_y      = 0.6
+    weight_foot_z      = 0.8
+
+    weight_pelv_x      = 0.5
+    weight_pelv_y      = 0.3
+    weight_pelv_z      = 0.0
+
+    weight_com_x       = 0.0
+    weight_com_y       = 0.0
+
+    weight_lin_vel_x   = 0.6
+    weight_lin_vel_y   = 0.6
+    weight_lin_vel_z   = 0.6
+    weight_ang_vel_z   = 0.6
+
+    weight_alive       = 0.1
+    weight_L           = 0.02
     weight_death       = 5.0
 
-    # [Penalty] Soft joint limits
-    limit_margin = 0.8
+    # --------------------
+    # penalty: joint limit
+    # --------------------
+    limit_margin = 0.90
     dof_limit_violation = torch.relu(torch.abs(joint_pos_scaled) - limit_margin)
     p_joint_limits = torch.sum(dof_limit_violation, dim=-1) * weight_joint_limit
 
-    # [Penalty] Action
-    p_actions = torch.mean(actions**2, dim=-1) * weight_action
-
-    # [Penalty] Energy
+    # --------------------
+    # penalty: action smooth / energy
+    # --------------------
+    p_actions = torch.mean(actions ** 2, dim=-1) * weight_action
     p_energy = torch.mean(torch.abs(actions * joint_vel_scaled), dim=-1) * weight_energy
 
-    # [Reward] Pelv velocity
-    vel_x_error = target_vel - pelv_lin_vel_w[:, 0]
-    r_pelv_vel_x = torch.exp(-20.0 * torch.square(vel_x_error)) * weight_pelv_vel_x
+    # --------------------
+    # reward: yaw / posture
+    # --------------------
+    r_yaw = torch.exp(-4.0 * torch.square(yaw_error)) * weight_yaw
 
-    # [Reward] Yaw (head angle)
-    r_yaw = torch.exp(-20.0 * torch.square(yaw_error)) * weight_yaw
-
-    # [Reward] Torso head
     dir_thres = 0.9
-    reward_ones = torch.ones_like(torso_heading_proj)
-    r_torso_head = torch.where(torso_heading_proj > dir_thres, 
-                               reward_ones, 
-                               torch.clamp(torso_heading_proj / dir_thres, min=0.0)) * weight_torso_head
-    # [Reward] Torso up
-    r_torso_up = torch.where(torso_up_proj > dir_thres, 
-                               reward_ones, 
-                               torch.clamp(torso_up_proj / dir_thres, min=0.0)) * weight_torso_up
-    # [Reward] Pelvis head
-    r_pelv_head = torch.where(pelv_heading_proj > dir_thres, 
-                               reward_ones, 
-                               torch.clamp(pelv_heading_proj / dir_thres, min=0.0)) * weight_pelv_head
-    # [Reward] Pelvis up
-    r_pelv_up = torch.where(pelv_up_proj > dir_thres, 
-                               reward_ones, 
-                               torch.clamp(pelv_up_proj / dir_thres, min=0.0)) * weight_pelv_up
-    # [Reward] Left foot side
-    r_lfoot_side = torch.where(l_foot_side_proj > dir_thres, 
-                               reward_ones, 
-                               torch.clamp(l_foot_side_proj / dir_thres, min=0.0)) * weight_lfoot_side
-    # [Reward] Right foot side
-    r_rfoot_side = torch.where(r_foot_side_proj > dir_thres, 
-                               reward_ones, 
-                               torch.clamp(r_foot_side_proj / dir_thres, min=0.0)) * weight_rfoot_side
-    # [Reward] Foot traj error
-    l_x_error = l_foot_target_pelv[:, 0] - l_foot_rel_pos_pelv[:, 0]
-    l_y_error = l_foot_target_pelv[:, 1] - l_foot_rel_pos_pelv[:, 1]
-    l_z_error = l_foot_target_pelv[:, 2] - l_foot_rel_pos_pelv[:, 2]
-    r_x_error = r_foot_target_pelv[:, 0] - r_foot_rel_pos_pelv[:, 0]
-    r_y_error = r_foot_target_pelv[:, 1] - r_foot_rel_pos_pelv[:, 1]
-    r_z_error = r_foot_target_pelv[:, 2] - r_foot_rel_pos_pelv[:, 2]
-    r_lfoot_x = torch.exp(-5.0 * torch.square(l_x_error)) * weight_lfoot_x
-    r_lfoot_y = torch.exp(-5.0 * torch.square(l_y_error)) * weight_lfoot_y
-    r_lfoot_z = torch.exp(-5.0 * torch.square(l_z_error)) * weight_lfoot_z
-    r_rfoot_x = torch.exp(-5.0 * torch.square(r_x_error)) * weight_rfoot_x
-    r_rfoot_y = torch.exp(-5.0 * torch.square(r_y_error)) * weight_rfoot_y
-    r_rfoot_z = torch.exp(-5.0 * torch.square(r_z_error)) * weight_rfoot_z
-    r_foot_track = r_lfoot_x + r_lfoot_y + r_lfoot_z + r_rfoot_x + r_rfoot_y + r_rfoot_z
+    ones = torch.ones_like(torso_heading_proj)
 
-    # [Reward] Alive
-    r_alive = torch.ones_like(potentials) * weight_alive
+    r_torso_head = torch.where(
+        torso_heading_proj > dir_thres,
+        ones,
+        torch.clamp(torso_heading_proj / dir_thres, min=0.0)
+    ) * weight_torso_head
 
-    # [Reward] progress
-    r_progress = (potentials - prev_potentials) * weight_progress
+    r_torso_up = torch.where(
+        torso_up_proj > dir_thres,
+        ones,
+        torch.clamp(torso_up_proj / dir_thres, min=0.0)
+    ) * weight_torso_up
 
-    # [Reward] COM
-    r_com_x = torch.exp(-5.0 * torch.square(com_x_error)) * weight_com
-    
-    # [Penalty] Angular momentum
-    p_L = torch.tanh(torch.abs(L[:, 2] / 20.0)) * weight_L
+    r_pelv_head = torch.where(
+        pelv_heading_proj > dir_thres,
+        ones,
+        torch.clamp(pelv_heading_proj / dir_thres, min=0.0)
+    ) * weight_pelv_head
+
+    r_pelv_up = torch.where(
+        pelv_up_proj > dir_thres,
+        ones,
+        torch.clamp(pelv_up_proj / dir_thres, min=0.0)
+    ) * weight_pelv_up
+
+
+    # --------------------
+    # reward: foot orientation
+    # --------------------
+    r_lfoot_side = torch.where(
+        l_foot_side_proj > dir_thres,
+        ones,
+        torch.clamp(l_foot_side_proj / dir_thres, min=0.0)
+    ) * weight_foot_side
+
+    r_rfoot_side = torch.where(
+        r_foot_side_proj > dir_thres,
+        ones,
+        torch.clamp(r_foot_side_proj / dir_thres, min=0.0)
+    ) * weight_foot_side
+
+    # --------------------
+    # reward: foot trajectory tracking
+    # --------------------
+    l_x_error = l_foot_pos_error[:, 0]
+    l_y_error = l_foot_pos_error[:, 1]
+    l_z_error = l_foot_pos_error[:, 2]
+
+    r_x_error = r_foot_pos_error[:, 0]
+    r_y_error = r_foot_pos_error[:, 1]
+    r_z_error = r_foot_pos_error[:, 2]
+
+    r_lfoot_x = torch.exp(-30.0 * torch.square(l_x_error)) * weight_foot_x
+    r_lfoot_y = torch.exp(-50.0 * torch.square(l_y_error)) * weight_foot_y
+    r_lfoot_z = torch.exp(-80.0 * torch.square(l_z_error)) * weight_foot_z
+
+    r_rfoot_x = torch.exp(-30.0 * torch.square(r_x_error)) * weight_foot_x
+    r_rfoot_y = torch.exp(-50.0 * torch.square(r_y_error)) * weight_foot_y
+    r_rfoot_z = torch.exp(-80.0 * torch.square(r_z_error)) * weight_foot_z
+
+    r_foot_track = (
+        r_lfoot_x + r_lfoot_y + r_lfoot_z
+        + r_rfoot_x + r_rfoot_y + r_rfoot_z
+    )
+
+    # --------------------
+    # reward: velocity target tracking
+    # --------------------
+    lin_vel_x_error = vel_error[:, 0]
+    lin_vel_y_error = vel_error[:, 1]
+    lin_vel_z_error = vel_error[:, 2]
+    ang_vel_z_error = vel_error[:, 3]
+    r_vel_x = torch.exp(-10 * torch.square(lin_vel_x_error)) * weight_lin_vel_x
+    r_vel_y = torch.exp(-10 * torch.square(lin_vel_y_error)) * weight_lin_vel_y
+    r_vel_z = torch.exp(-10 * torch.square(lin_vel_z_error)) * weight_lin_vel_z
+    r_vel_az = torch.exp(-10 * torch.square(ang_vel_z_error)) * weight_ang_vel_z
+    r_vel_target = (
+        r_vel_x + r_vel_y + r_vel_z + r_vel_az
+    )
+
+    # --------------------
+    # reward: pelvis/COM target tracking
+    # --------------------
+    r_com_x = torch.exp(-10.0 * torch.square(com_error[:, 0])) * weight_com_x
+    r_com_y = torch.exp(-2.0 * torch.square(com_error[:, 1])) * weight_com_y
+
+    # pelvis target tracking
+    r_pelv_x = torch.exp(-10.0 * torch.square(pelv_pos_error[:, 0])) * weight_pelv_x
+    r_pelv_y = torch.exp(-5.0 * torch.square(pelv_pos_error[:, 1])) * weight_pelv_y
+    r_pelv_z = torch.exp(-2.0 * torch.square(pelv_pos_error[:, 2])) * weight_pelv_z
+
+    # --------------------
+    # penalty: angular momentum yaw
+    # --------------------
+    p_L = torch.tanh(torch.abs(L[:, 2]) / 50.0) * weight_L
+
+    # --------------------
+    # alive
+    # --------------------
+    r_alive = torch.ones_like(yaw_error) * weight_alive
 
     total_reward = (
-        -p_joint_limits
-        -p_actions
-        -p_energy
-        +r_pelv_vel_x
-        +r_yaw
-        +r_torso_head
-        +r_torso_up
-        +r_pelv_head
-        +r_pelv_up
-        +r_lfoot_side
-        +r_rfoot_side
-        +r_foot_track
-        +r_alive
-        +r_progress
-        +r_com_x
-        -p_L
+        - p_joint_limits
+        - p_actions
+        - p_energy
+
+        + r_yaw
+        + r_torso_head
+        + r_torso_up
+        + r_pelv_head
+        + r_pelv_up
+
+        + r_lfoot_side
+        + r_rfoot_side
+        + r_foot_track
+
+        + r_vel_target
+
+        + r_com_x
+        + r_com_y
+
+        + r_pelv_x
+        + r_pelv_y
+        + r_pelv_z
+
+        - p_L
+        + r_alive
     )
 
     death_cost = -weight_death
-    total_reward = torch.where(reset_terminated, torch.ones_like(total_reward) * death_cost, total_reward)
+    total_reward = torch.where(
+        died,
+        torch.ones_like(total_reward) * death_cost,
+        total_reward
+    )
 
     reward_terms = torch.stack([
         p_joint_limits,
         p_actions,
         p_energy,
-        r_pelv_vel_x,
         r_yaw,
         r_torso_head,
         r_torso_up,
@@ -983,10 +1082,17 @@ def compute_rewards(
         r_rfoot_x,
         r_rfoot_y,
         r_rfoot_z,
-        r_alive,
-        r_progress,
+        r_vel_x,
+        r_vel_y,
+        r_vel_z,
+        r_vel_az,
         r_com_x,
+        r_com_y,
+        r_pelv_x,
+        r_pelv_y,
+        r_pelv_z,
         p_L,
+        r_alive,
         total_reward,
     ], dim=-1)
 
